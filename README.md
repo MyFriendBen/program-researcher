@@ -10,17 +10,17 @@ This tool automates the research phase of adding new benefit programs to the MyF
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           LangGraph State Machine                            │
+│                           LangGraph State Machine                           │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                              │
+│                                                                             │
 │  Gather Links → Read Fields → Extract Criteria → QA Validate Research       │
-│                                                        ↓                     │
-│                                              [Fix Loop if needed]            │
-│                                                        ↓                     │
+│                                                        ↓                    │
+│                                              [Fix Loop if needed]           │
+│                                                        ↓                    │
 │  Generate Tests → QA Validate Tests → [Fix Loop] → Convert JSON             │
-│                                                        ↓                     │
+│                                                        ↓                    │
 │  QA Validate JSON → [Fix Loop] → Create Linear Ticket → END                 │
-│                                                                              │
+│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
