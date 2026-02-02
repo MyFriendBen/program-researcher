@@ -98,9 +98,12 @@ async def qa_validate_tests_node(state: ResearchState) -> dict:
             recommendation=data.get("recommendation", ""),
         )
 
-        # Log results
-        critical_count = sum(1 for i in issues if i.severity == IssueSeverity.CRITICAL)
-        major_count = sum(1 for i in issues if i.severity == IssueSeverity.MAJOR)
+        # Log results - handle both enum and string (use_enum_values=True converts to string)
+        def get_severity(issue):
+            return issue.severity.value if hasattr(issue.severity, 'value') else issue.severity
+
+        critical_count = sum(1 for i in issues if get_severity(i) == "critical")
+        major_count = sum(1 for i in issues if get_severity(i) == "major")
 
         messages.append(f"QA Result: {result.overall_status}")
         messages.append(f"Issues: {critical_count} critical, {major_count} major, {len(issues) - critical_count - major_count} minor")

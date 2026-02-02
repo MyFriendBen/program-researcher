@@ -135,9 +135,12 @@ async def qa_validate_json_node(state: ResearchState) -> dict:
                 )
             )
 
-        # Determine overall status
-        critical_issues = [i for i in issues if i.severity == IssueSeverity.CRITICAL]
-        major_issues = [i for i in issues if i.severity == IssueSeverity.MAJOR]
+        # Determine overall status - handle both enum and string (use_enum_values=True converts to string)
+        def get_severity(issue):
+            return issue.severity.value if hasattr(issue.severity, 'value') else issue.severity
+
+        critical_issues = [i for i in issues if get_severity(i) == "critical"]
+        major_issues = [i for i in issues if get_severity(i) == "major"]
 
         if critical_issues:
             overall_status = "NEEDS_REVISION"

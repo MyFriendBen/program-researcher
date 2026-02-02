@@ -67,6 +67,11 @@ console = Console()
     is_flag=True,
     help="Show detailed progress messages",
 )
+@click.option(
+    "--no-save",
+    is_flag=True,
+    help="Don't save step outputs to files",
+)
 def research_program(
     program: str,
     state: str,
@@ -76,6 +81,7 @@ def research_program(
     output_dir: str | None,
     dry_run: bool,
     verbose: bool,
+    no_save: bool,
 ):
     """
     Research a benefit program and generate test cases.
@@ -133,6 +139,7 @@ def research_program(
                 white_label=white_label,
                 source_urls=list(source_url),
                 max_iterations=max_iterations,
+                save_outputs=not no_save,
             )
         )
 
@@ -214,9 +221,10 @@ def show_results(state: ResearchState):
     table.add_row("Test Case QA Iterations", str(state.test_case_iteration))
     table.add_row("JSON QA Iterations", str(state.json_iteration))
 
-    # Status
-    status_color = "green" if state.status == WorkflowStatus.COMPLETED else "yellow"
-    table.add_row("Final Status", f"[{status_color}]{state.status.value}[/{status_color}]")
+    # Status - handle both enum and string (use_enum_values=True converts to string)
+    status_value = state.status.value if hasattr(state.status, 'value') else state.status
+    status_color = "green" if status_value == "completed" else "yellow"
+    table.add_row("Final Status", f"[{status_color}]{status_value}[/{status_color}]")
 
     console.print(table)
 
@@ -228,10 +236,18 @@ def show_results(state: ResearchState):
 
     # Output files
     console.print("\n[bold]Output Files:[/bold]")
-    output_dir = settings.output_dir
-    if output_dir.exists():
-        for f in output_dir.glob(f"{state.white_label}_{state.program_name}*"):
-            console.print(f"  - {f}")
+    if state.output_dir:
+        from pathlib import Path
+        output_path = Path(state.output_dir)
+        if output_path.exists():
+            console.print(f"  Directory: {output_path}")
+            for f in sorted(output_path.glob("*")):
+                console.print(f"    - {f.name}")
+    else:
+        output_dir = settings.output_dir
+        if output_dir.exists():
+            for f in output_dir.glob(f"{state.white_label}_{state.program_name}*"):
+                console.print(f"  - {f}")
 
     # Show messages if verbose
     if state.messages:

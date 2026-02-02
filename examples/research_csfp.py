@@ -12,10 +12,19 @@ Usage:
 import asyncio
 import os
 import sys
+import types
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+# Set up module aliasing so imports work regardless of repo directory name
+repo_dir = Path(__file__).parent.parent.resolve()
+actual_name = repo_dir.name
+
+if actual_name != 'program_research_agent':
+    sys.path.insert(0, str(repo_dir.parent))
+    program_research_agent = types.ModuleType('program_research_agent')
+    program_research_agent.__path__ = [str(repo_dir)]
+    program_research_agent.__file__ = str(repo_dir / '__init__.py')
+    sys.modules['program_research_agent'] = program_research_agent
 
 from program_research_agent.graph import run_research
 from program_research_agent.state import WorkflowStatus
@@ -54,7 +63,9 @@ async def main():
     print("=" * 60)
     print()
 
-    print(f"Status: {state.status.value}")
+    # Handle both enum and string (use_enum_values=True converts to string)
+    status_value = state.status.value if hasattr(state.status, 'value') else state.status
+    print(f"Status: {status_value}")
     print()
 
     if state.link_catalog:
@@ -112,10 +123,10 @@ async def main():
             print(f"  {msg}")
     print()
 
-    if state.status == WorkflowStatus.COMPLETED:
+    if status_value == "completed":
         print("✅ Research completed successfully!")
     else:
-        print(f"⚠️ Research ended with status: {state.status.value}")
+        print(f"⚠️ Research ended with status: {status_value}")
 
     return state
 

@@ -425,6 +425,11 @@ class ResearchState(BaseModel):
         default_factory=list, description="Log of workflow progress messages"
     )
 
+    # ----- Output -----
+    output_dir: str | None = Field(
+        default=None, description="Directory where step outputs are saved"
+    )
+
     model_config = {"use_enum_values": True}
 
 

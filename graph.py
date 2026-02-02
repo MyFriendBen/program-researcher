@@ -10,6 +10,7 @@ This module defines the workflow graph that orchestrates:
 6. Linear ticket creation
 """
 
+from pathlib import Path
 from typing import Literal
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -25,6 +26,12 @@ from .nodes.qa_research import fix_research_node, qa_validate_research_node
 from .nodes.qa_tests import qa_validate_tests_node
 from .nodes.read_screener_fields import read_screener_fields_node
 from .state import ResearchState, WorkflowStatus
+from .tools.output_saver import (
+    get_research_output_dir,
+    save_final_summary,
+    save_messages_log,
+    save_step_output,
+)
 
 
 # -----------------------------------------------------------------------------
@@ -43,8 +50,12 @@ def should_fix_research(state: ResearchState) -> Literal["fix_research", "genera
         return "generate_tests"
 
     # Check if there are critical or major issues
+    # Handle both enum and string (use_enum_values=True converts to string)
+    def get_severity(issue):
+        return issue.severity.value if hasattr(issue.severity, 'value') else issue.severity
+
     has_blocking_issues = any(
-        issue.severity.value in ("critical", "major") and not issue.resolved
+        get_severity(issue) in ("critical", "major") and not issue.resolved
         for issue in state.research_qa_result.issues
     )
 
@@ -64,8 +75,12 @@ def should_fix_tests(state: ResearchState) -> Literal["fix_test_cases", "convert
     if not state.test_case_qa_result:
         return "convert_json"
 
+    # Handle both enum and string (use_enum_values=True converts to string)
+    def get_severity(issue):
+        return issue.severity.value if hasattr(issue.severity, 'value') else issue.severity
+
     has_blocking_issues = any(
-        issue.severity.value in ("critical", "major") and not issue.resolved
+        get_severity(issue) in ("critical", "major") and not issue.resolved
         for issue in state.test_case_qa_result.issues
     )
 
@@ -84,8 +99,12 @@ def should_fix_json(state: ResearchState) -> Literal["fix_json", "create_ticket"
     if not state.json_qa_result:
         return "create_ticket"
 
+    # Handle both enum and string (use_enum_values=True converts to string)
+    def get_severity(issue):
+        return issue.severity.value if hasattr(issue.severity, 'value') else issue.severity
+
     has_blocking_issues = any(
-        issue.severity.value in ("critical", "major") and not issue.resolved
+        get_severity(issue) in ("critical", "major") and not issue.resolved
         for issue in state.json_qa_result.issues
     )
 
@@ -215,6 +234,7 @@ async def run_research(
     source_urls: list[str],
     max_iterations: int = 3,
     thread_id: str | None = None,
+    save_outputs: bool = True,
 ) -> ResearchState:
     """
     Run the full research workflow for a program.
@@ -226,10 +246,17 @@ async def run_research(
         source_urls: List of source documentation URLs
         max_iterations: Maximum QA loop iterations
         thread_id: Optional thread ID for checkpointing
+        save_outputs: Whether to save step outputs to files
 
     Returns:
         Final ResearchState with all outputs
     """
+    # Create output directory if saving outputs
+    output_dir = None
+    if save_outputs:
+        output_dir = get_research_output_dir(white_label, program_name)
+        print(f"[setup] Output directory: {output_dir}")
+
     # Initialize state
     initial_state = ResearchState(
         program_name=program_name,
@@ -238,6 +265,7 @@ async def run_research(
         source_urls=source_urls,
         max_iterations=max_iterations,
         messages=[f"Starting research for {program_name} ({state_code})..."],
+        output_dir=str(output_dir) if output_dir else None,
     )
 
     # Configure thread
@@ -249,17 +277,69 @@ async def run_research(
 
     # Run the graph
     final_state = None
+    printed_message_count = len(initial_state.messages)
+
     async for event in app.astream(initial_state, config):
         # Each event is a dict with the node name as key
         for node_name, node_output in event.items():
             if "messages" in node_output:
-                for msg in node_output["messages"]:
+                # Only print NEW messages (skip already printed ones)
+                all_messages = node_output["messages"]
+                new_messages = all_messages[printed_message_count:]
+                for msg in new_messages:
                     print(f"[{node_name}] {msg}")
+                printed_message_count = len(all_messages)
+
+            # Save step output if enabled
+            if save_outputs and output_dir:
+                _save_node_output(output_dir, node_name, node_output)
 
         # Update final state
         final_state = app.get_state(config).values
 
-    return ResearchState(**final_state) if final_state else initial_state
+    # Build final state object
+    result_state = ResearchState(**final_state) if final_state else initial_state
+
+    # Save final summary and messages log
+    if save_outputs and output_dir:
+        save_messages_log(output_dir, result_state.messages)
+        save_final_summary(output_dir, result_state)
+        print(f"[complete] Outputs saved to: {output_dir}")
+
+    return result_state
+
+
+def _save_node_output(output_dir: Path | str, node_name: str, node_output: dict) -> None:
+    """Save the output from a node to files."""
+    output_dir = Path(output_dir)
+
+    # Map node names to their key outputs
+    output_mapping = {
+        "gather_links": ("link_catalog", None),
+        "read_screener_fields": ("screener_fields", None),
+        "extract_criteria": ("field_mapping", None),
+        "qa_validate_research": ("research_qa_result", "research_iteration"),
+        "fix_research": (None, None),  # No primary output
+        "generate_tests": ("test_suite", None),
+        "qa_validate_tests": ("test_case_qa_result", "test_case_iteration"),
+        "fix_test_cases": (None, None),
+        "convert_json": ("json_test_cases", None),
+        "qa_validate_json": ("json_qa_result", "json_iteration"),
+        "fix_json": (None, None),
+        "create_ticket": ("linear_ticket", None),
+    }
+
+    if node_name not in output_mapping:
+        return
+
+    output_key, iteration_key = output_mapping[node_name]
+
+    if output_key and output_key in node_output:
+        data = node_output[output_key]
+        iteration = node_output.get(iteration_key) if iteration_key else None
+
+        if data is not None:
+            save_step_output(output_dir, node_name, data, iteration)
 
 
 def get_graph_visualization():

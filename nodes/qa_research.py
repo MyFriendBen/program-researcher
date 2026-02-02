@@ -100,10 +100,13 @@ async def qa_validate_research_node(state: ResearchState) -> dict:
             recommendation=data.get("recommendation", ""),
         )
 
-        # Log results
-        critical_count = sum(1 for i in issues if i.severity == IssueSeverity.CRITICAL)
-        major_count = sum(1 for i in issues if i.severity == IssueSeverity.MAJOR)
-        minor_count = sum(1 for i in issues if i.severity == IssueSeverity.MINOR)
+        # Log results - handle both enum and string (use_enum_values=True converts to string)
+        def get_severity(issue):
+            return issue.severity.value if hasattr(issue.severity, 'value') else issue.severity
+
+        critical_count = sum(1 for i in issues if get_severity(i) == "critical")
+        major_count = sum(1 for i in issues if get_severity(i) == "major")
+        minor_count = sum(1 for i in issues if get_severity(i) == "minor")
 
         messages.append(f"QA Result: {result.overall_status}")
         messages.append(f"Issues found: {critical_count} critical, {major_count} major, {minor_count} minor")
@@ -170,8 +173,10 @@ def format_field_mapping(mapping) -> str:
     ])
 
     for criterion in mapping.criteria_cannot_evaluate:
+        # Handle both enum and string (use_enum_values=True converts to string)
+        impact = criterion.impact.value if hasattr(criterion.impact, 'value') else criterion.impact
         lines.append(
-            f"| {criterion.criterion[:60]} | {criterion.source_reference} | {criterion.impact.value} | {criterion.notes[:40]} |"
+            f"| {criterion.criterion[:60]} | {criterion.source_reference} | {impact} | {criterion.notes[:40]} |"
         )
 
     lines.extend([
@@ -251,8 +256,10 @@ def format_qa_issues(issues: list[QAIssue]) -> str:
     lines = ["## Issues to Address", ""]
 
     for i, issue in enumerate(issues, 1):
+        # Handle both enum and string (use_enum_values=True converts to string)
+        severity = issue.severity.value if hasattr(issue.severity, 'value') else issue.severity
         lines.extend([
-            f"### Issue {i}: [{issue.severity.value.upper()}] {issue.issue_type}",
+            f"### Issue {i}: [{severity.upper()}] {issue.issue_type}",
             f"**Location**: {issue.location}",
             f"**Description**: {issue.description}",
             f"**Suggested Fix**: {issue.suggested_fix}",

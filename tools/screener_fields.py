@@ -83,7 +83,7 @@ def parse_django_models(models_path: Path) -> dict[str, list[ScreenerField]]:
                     if isinstance(item, ast.Assign):
                         for target in item.targets:
                             if isinstance(target, ast.Name):
-                                field_info = extract_django_field(target.name, item.value, content)
+                                field_info = extract_django_field(target.id, item.value, content)
                                 if field_info:
                                     field_info.model = model_name
                                     result[model_name].append(field_info)

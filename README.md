@@ -35,11 +35,15 @@ This tool automates the research phase of adding new benefit programs to the MyF
 ## Installation
 
 ```bash
-cd program_research_agent
-pip install -e .
+# Navigate into this repo (whatever you named it locally)
+cd program_researcher  # or your local directory name
+
+# Install dependencies
+pip install langgraph langchain langchain-anthropic pydantic pydantic-settings \
+    httpx beautifulsoup4 lxml jsonschema click rich python-dotenv
 ```
 
-Or with development dependencies:
+Or install as an editable package:
 
 ```bash
 pip install -e ".[dev]"
@@ -47,40 +51,65 @@ pip install -e ".[dev]"
 
 ## Configuration
 
-Create a `.env` file in the project root:
+Set your Anthropic API key as an environment variable:
 
-```env
-RESEARCH_AGENT_ANTHROPIC_API_KEY=sk-ant-...
-RESEARCH_AGENT_LINEAR_API_KEY=lin_api_...
-RESEARCH_AGENT_LINEAR_TEAM_ID=your-team-id
-RESEARCH_AGENT_LINEAR_PROJECT_ID=your-project-id
+```bash
+export RESEARCH_AGENT_ANTHROPIC_API_KEY=sk-ant-...
 ```
+
+Optional: For Linear ticket creation, also set:
+
+```bash
+export RESEARCH_AGENT_LINEAR_API_KEY=lin_api_...
+export RESEARCH_AGENT_LINEAR_TEAM_ID=your-team-id
+export RESEARCH_AGENT_LINEAR_PROJECT_ID=your-project-id
+```
+
+You can also create a `.env` file in the repo root with these values.
 
 ## Usage
 
-### CLI
+### CLI (Recommended)
+
+**Important**: Run all commands from within this repo directory using `run.py`. This ensures imports work regardless of what you named your local clone.
 
 ```bash
+# Navigate into the repo first
+cd /path/to/your-repo-name  # whatever you named it locally
+
 # Research a program
-research-program research \
+python run.py research \
   --program "CSFP" \
   --state "il" \
   --white-label "il" \
   --source-url "https://www.fns.usda.gov/csfp" \
   --source-url "https://www.dhs.state.il.us/page.aspx?item=30513"
 
-# Preview workflow without executing
-research-program research --dry-run \
+# Preview workflow without executing (no API key required)
+python run.py research --dry-run \
   --program "CSFP" \
   --state "il" \
   --white-label "il" \
   --source-url "https://www.fns.usda.gov/csfp"
 
 # Show graph structure
-research-program graph
+python run.py graph
+
+# Get help
+python run.py --help
+python run.py research --help
 ```
 
 ### Python API
+
+Run the example script from within the repo:
+
+```bash
+cd /path/to/your-repo-name
+python examples/research_csfp.py
+```
+
+Or create your own script (must be run from within the repo directory):
 
 ```python
 import asyncio
@@ -107,20 +136,50 @@ asyncio.run(main())
 
 ## Output
 
-The tool produces:
+The tool produces outputs at each step and saves them to timestamped directories for debugging and auditing.
+
+### What Gets Saved
 
 1. **Link Catalog**: All documentation URLs discovered and categorized
-2. **Field Mapping**: Eligibility criteria mapped to screener fields, with data gaps identified
-3. **Human Test Cases**: 10-15 scenarios for manual QA testing
-4. **JSON Test Cases**: Test data in `pre_validation_schema.json` format
-5. **Linear Ticket**: Implementation ticket with acceptance criteria
+2. **Screener Fields**: Available fields from Django models
+3. **Field Mapping**: Eligibility criteria mapped to screener fields, with data gaps identified
+4. **QA Results**: Validation results at each QA step (with iteration numbers)
+5. **Human Test Cases**: 10-15 scenarios for manual QA testing
+6. **JSON Test Cases**: Test data in `pre_validation_schema.json` format
+7. **Linear Ticket**: Implementation ticket with acceptance criteria
+8. **Workflow Log**: Complete execution log
+9. **Summary**: Markdown summary of the research run
 
-Output files are saved to `program_research_agent/output/`:
+### Output Directory Structure
+
+Each research run creates a timestamped directory:
 
 ```
 output/
-├── il_csfp_test_cases.json    # JSON test cases for validation system
-└── il_csfp_ticket.md          # Ticket content (if Linear not configured)
+└── il_csfp_20240115_143022/     # Timestamped run directory
+    ├── SUMMARY.md               # High-level summary with metrics
+    ├── workflow_log.txt         # Complete execution log
+    ├── gather_links.json        # Link catalog
+    ├── screener_fields.json     # Available screener fields
+    ├── extract_criteria.json    # Eligibility criteria and field mapping
+    ├── qa_research_iter1.json   # QA validation results (per iteration)
+    ├── generate_tests.json      # Human-readable test scenarios
+    ├── qa_tests_iter1.json      # Test case QA results
+    ├── convert_json.json        # JSON test cases
+    ├── qa_json_iter1.json       # JSON QA results
+    └── linear_ticket.json       # Ticket content
+```
+
+### Disabling Output Saving
+
+To run without saving outputs (e.g., for quick testing):
+
+```bash
+python run.py research --no-save \
+  --program "CSFP" \
+  --state "il" \
+  --white-label "il" \
+  --source-url "https://www.fns.usda.gov/csfp"
 ```
 
 ## Workflow Steps

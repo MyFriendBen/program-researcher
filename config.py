@@ -56,7 +56,7 @@ class Settings(BaseSettings):
         description="Maximum links to extract from a single source",
     )
     web_request_timeout: int = Field(
-        default=30,
+        default=60,
         description="Timeout in seconds for web requests",
     )
 
