@@ -20,6 +20,7 @@ from ..state import (
     JSONTestCaseMemberIncome,
     JSONTestCaseMemberInsurance,
     ResearchState,
+    WorkflowStatus,
 )
 from ..tools.schema_validator import validate_test_case
 
@@ -38,10 +39,13 @@ async def convert_to_json_node(state: ResearchState) -> dict:
     messages.append("Converting test cases to JSON format...")
 
     if not state.test_suite or not state.test_suite.test_cases:
-        messages.append("No test cases to convert")
+        messages.append("No test cases to convert - cannot proceed")
+        messages.append("This is a critical failure - JSON conversion skipped")
         return {
             "json_test_cases": [],
             "messages": messages,
+            "status": WorkflowStatus.FAILED,
+            "error_message": "No test cases available for JSON conversion",
         }
 
     # Load the schema for reference
@@ -161,6 +165,7 @@ def convert_test_case(
         household_assets=tc.household_assets,
         agree_to_terms_of_service=True,
         is_13_or_older=True,
+        housing_situation="rent",  # Default to rent for test cases
         current_benefits=tc.current_benefits if tc.current_benefits else None,
         members=members,
     )

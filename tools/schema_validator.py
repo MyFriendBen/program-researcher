@@ -7,10 +7,11 @@ Validates test cases against the pre_validation_schema.json.
 import json
 from pathlib import Path
 from typing import Any
+from urllib.parse import urljoin
 
-from jsonschema import Draft7Validator, ValidationError, validate
+from jsonschema import Draft7Validator, RefResolver, ValidationError, validate
 
-from ..config import get_schema_path
+from ..config import get_schema_path, settings
 
 
 def load_schema(schema_name: str = "pre_validation_schema.json") -> dict[str, Any]:
@@ -21,6 +22,29 @@ def load_schema(schema_name: str = "pre_validation_schema.json") -> dict[str, An
 
     with open(schema_path) as f:
         return json.load(f)
+
+
+def get_schema_resolver() -> RefResolver:
+    """
+    Create a RefResolver that can resolve $ref references in schemas.
+
+    This allows the batch schema to reference the main schema.
+    """
+    # Load the main schema for the resolver's store
+    main_schema = load_schema("pre_validation_schema.json")
+
+    # Create a resolver with the schemas directory as the base URI
+    schema_dir = settings.schemas_dir.resolve()
+    base_uri = f"file://{schema_dir}/"
+
+    # Build a schema store for local resolution
+    store = {
+        base_uri + "pre_validation_schema.json": main_schema,
+        "./pre_validation_schema.json": main_schema,
+        "pre_validation_schema.json": main_schema,
+    }
+
+    return RefResolver(base_uri, main_schema, store=store)
 
 
 def validate_against_schema(
@@ -44,25 +68,30 @@ def validate_against_schema(
         else:
             schema = load_schema(schema_name)
 
-        # Validate
-        validate(instance=data, schema=schema)
-        return True, []
+        # Create resolver for $ref handling
+        resolver = get_schema_resolver()
 
-    except ValidationError as e:
+        # Create validator with resolver
+        validator = Draft7Validator(schema, resolver=resolver)
+
         # Collect all validation errors
         errors = []
-        validator = Draft7Validator(schema)
         for error in validator.iter_errors(data):
             path = " -> ".join(str(p) for p in error.absolute_path) or "root"
             errors.append(f"{path}: {error.message}")
 
-        return False, errors
+        if errors:
+            return False, errors
+        return True, []
 
     except FileNotFoundError as e:
         return False, [str(e)]
 
     except json.JSONDecodeError as e:
         return False, [f"Invalid JSON in schema: {e}"]
+
+    except Exception as e:
+        return False, [f"Validation error: {e}"]
 
 
 def validate_test_case(test_case: dict[str, Any]) -> tuple[bool, list[str]]:

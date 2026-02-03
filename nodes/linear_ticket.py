@@ -22,13 +22,40 @@ async def create_linear_ticket_node(state: ResearchState) -> dict:
     Create a Linear ticket with acceptance criteria.
 
     This node:
-    1. Formats the acceptance criteria from test cases
-    2. Includes field mapping summary
-    3. Attaches JSON test cases as reference
-    4. Creates the ticket via Linear API
+    1. Validates required data exists
+    2. Formats the acceptance criteria from test cases
+    3. Includes field mapping summary
+    4. Attaches JSON test cases as reference
+    5. Creates the ticket via Linear API
     """
     messages = list(state.messages)
     messages.append("Creating Linear ticket...")
+
+    # Validate required data exists
+    validation_errors = []
+
+    if not state.field_mapping:
+        validation_errors.append("Missing field mapping - research extraction may have failed")
+
+    if not state.test_suite or not state.test_suite.test_cases:
+        validation_errors.append("Missing test cases - test generation may have failed")
+
+    if not state.json_test_cases:
+        validation_errors.append("Missing JSON test cases - JSON conversion may have failed")
+
+    if validation_errors:
+        messages.append("Validation failed - cannot create complete ticket:")
+        for error in validation_errors:
+            messages.append(f"  - {error}")
+
+        return {
+            "linear_ticket": None,
+            "linear_ticket_url": None,
+            "linear_ticket_id": None,
+            "status": WorkflowStatus.FAILED,
+            "error_message": "Cannot create ticket: " + "; ".join(validation_errors),
+            "messages": messages,
+        }
 
     # Build ticket content
     ticket_content = build_ticket_content(state)

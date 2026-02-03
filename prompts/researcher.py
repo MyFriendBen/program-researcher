@@ -392,12 +392,110 @@ Return the corrected version of the output in the same format, with all issues a
 If an issue cannot be fully addressed, note why in a `_fix_notes` field.
 """
 
+GENERATE_SINGLE_TEST_CASE_PROMPT = """## Task: Generate a Single Test Scenario
+
+Create ONE test scenario for the specified category.
+
+### Program Information
+- **Program Name**: {program_name}
+- **State**: {state_code}
+- **White Label**: {white_label}
+
+### Eligibility Criteria (that can be evaluated)
+{criteria_can_evaluate}
+
+### Test Case Requirements
+- **Category**: {category}
+- **Scenario Number**: {scenario_number}
+- **Description**: {category_description}
+
+### Previously Generated Scenarios
+{previous_scenarios}
+
+### Output Format
+
+Return a JSON object for this SINGLE test case:
+```json
+{{
+  "scenario_number": {scenario_number},
+  "title": "Descriptive Title",
+  "what_checking": "What this specific test validates",
+  "category": "{category}",
+  "expected_eligible": true|false,
+  "expected_amount": null or number,
+  "expected_time": "15 minutes",
+  "steps": [
+    {{
+      "section": "Location",
+      "instructions": ["Enter ZIP code `XXXXX`", "Select county `County Name`"]
+    }},
+    {{
+      "section": "Household",
+      "instructions": ["Number of people: `X`"]
+    }},
+    {{
+      "section": "Person 1",
+      "instructions": ["Birth month/year: `Month Year` (age XX)", "..."]
+    }}
+  ],
+  "what_to_look_for": ["Expected result 1", "Expected result 2"],
+  "why_matters": "Why this test is important",
+  "zip_code": "XXXXX",
+  "county": "County Name",
+  "household_size": 1,
+  "household_assets": 0,
+  "members_data": [
+    {{
+      "relationship": "headOfHousehold",
+      "birth_month": 3,
+      "birth_year": 1960,
+      "has_income": true,
+      "income": {{
+        "sSRetirement": 800,
+        "income_frequency": "monthly"
+      }},
+      "insurance": {{"none": true}}
+    }}
+  ],
+  "current_benefits": {{}},
+  "citizenship_status": "citizen"
+}}
+```
+
+### Important
+- Return ONLY the JSON object for this single test case
+- Use realistic values based on current FPL and program thresholds
+- Calculate birth years from current date to get exact ages
+- Ensure the scenario is DIFFERENT from previously generated ones
+- Make sure to test the specific aspect described in the category description
+"""
+
+# Test case categories with descriptions
+TEST_CASE_CATEGORIES = [
+    ("happy_path", "Clearly eligible household - typical applicant who easily qualifies"),
+    ("happy_path", "Minimally eligible - just barely meets all criteria"),
+    ("income_threshold", "Income just below limit - should be eligible"),
+    ("income_threshold", "Income exactly at limit - should be eligible"),
+    ("income_threshold", "Income just above limit - should NOT be eligible"),
+    ("age_threshold", "Age exactly at minimum requirement - should be eligible"),
+    ("age_threshold", "Age just below minimum - should NOT be eligible"),
+    ("age_threshold", "Age well above minimum - should be eligible"),
+    ("geographic", "Eligible location within service area"),
+    ("exclusion", "Already receives the benefit - should show as ineligible or different message"),
+    ("exclusion", "Excluded due to other program participation (e.g., SNAP for CSFP)"),
+    ("multi_member", "Mixed household - some members eligible, some not"),
+    ("multi_member", "Multiple eligible members in same household"),
+    ("edge_case", "Boundary condition or unusual but valid scenario"),
+]
+
 # Dictionary for easy access
 RESEARCHER_PROMPTS = {
     "system": SYSTEM_PROMPT,
     "gather_links": GATHER_LINKS_PROMPT,
     "extract_criteria": EXTRACT_CRITERIA_PROMPT,
     "generate_test_cases": GENERATE_TEST_CASES_PROMPT,
+    "generate_single_test_case": GENERATE_SINGLE_TEST_CASE_PROMPT,
     "convert_to_json": CONVERT_TO_JSON_PROMPT,
     "fix_issues": FIX_ISSUES_PROMPT,
+    "test_case_categories": TEST_CASE_CATEGORIES,
 }

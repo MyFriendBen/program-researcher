@@ -99,16 +99,87 @@ def save_final_summary(
     def get_value(val):
         return val.value if hasattr(val, 'value') else val
 
+    status = get_value(state.status)
+    status_emoji = "✅" if status == "completed" else "❌" if status == "failed" else "⚠️"
+
     lines = [
         f"# Research Summary: {state.program_name} ({state.state_code.upper()})",
         "",
         f"**White Label:** {state.white_label}",
         f"**Research Date:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"**Status:** {get_value(state.status)}",
-        "",
-        "## Source URLs",
+        f"**Status:** {status_emoji} {status.upper()}",
         "",
     ]
+
+    # If failed, show error and next steps prominently
+    if status == "failed":
+        lines.extend([
+            "## ❌ Workflow Failed",
+            "",
+        ])
+
+        if state.error_message:
+            lines.extend([
+                "### Error",
+                f"```",
+                state.error_message,
+                f"```",
+                "",
+            ])
+
+        # Extract recent error messages from workflow log
+        error_messages = [msg for msg in state.messages if any(
+            keyword in msg.lower() for keyword in ["error", "failed", "critical failure", "cannot"]
+        )]
+        if error_messages:
+            lines.extend([
+                "### Error Details from Log",
+                "",
+            ])
+            for msg in error_messages[-5:]:  # Last 5 error-related messages
+                lines.append(f"- {msg}")
+            lines.append("")
+
+        # Determine next steps based on what failed
+        lines.extend([
+            "### Next Steps",
+            "",
+        ])
+
+        if not state.test_suite or (hasattr(state.test_suite, 'test_cases') and not state.test_suite.test_cases):
+            lines.extend([
+                "1. **Test case generation failed** - The LLM response could not be parsed",
+                "   - This often happens when the response is too long and gets truncated",
+                "   - Try running again - LLM responses can vary",
+                "   - Consider breaking down the request or using a different approach",
+                "",
+            ])
+        elif not state.json_test_cases:
+            lines.extend([
+                "1. **JSON conversion failed** - Test cases couldn't be converted to JSON format",
+                "   - Check the test case data for missing required fields",
+                "   - Review the schema validation errors in the log",
+                "",
+            ])
+        elif not state.field_mapping:
+            lines.extend([
+                "1. **Criteria extraction failed** - Could not extract eligibility criteria",
+                "   - Check if source URLs are accessible",
+                "   - Verify the documentation contains eligibility information",
+                "",
+            ])
+
+        lines.extend([
+            "To retry: Run the same command again",
+            "",
+            "---",
+            "",
+        ])
+
+    lines.extend([
+        "## Source URLs",
+        "",
+    ])
 
     for url in state.source_urls:
         lines.append(f"- {url}")
@@ -193,6 +264,18 @@ def save_final_summary(
             lines.append(f"| `{f.name}` | {desc} |")
 
     lines.append("")
+
+    # Add last workflow messages for context
+    if state.messages:
+        lines.extend([
+            "## Workflow Log (Last 15 Messages)",
+            "",
+        ])
+        for msg in state.messages[-15:]:
+            # Escape any markdown characters and format as list
+            escaped_msg = msg.replace("|", "\\|").replace("`", "\\`")
+            lines.append(f"- {escaped_msg}")
+        lines.append("")
 
     filepath.write_text("\n".join(lines))
     return filepath

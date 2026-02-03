@@ -116,6 +116,33 @@ def should_fix_json(state: ResearchState) -> Literal["fix_json", "create_ticket"
     return "create_ticket"
 
 
+def _get_status(state: ResearchState) -> str:
+    """Helper to get status as string."""
+    return state.status.value if hasattr(state.status, 'value') else state.status
+
+
+def check_after_generate_tests(state: ResearchState) -> Literal["qa_validate_tests", "end"]:
+    """
+    Check if test generation succeeded before proceeding to QA.
+    """
+    if _get_status(state) == "failed":
+        return "end"
+    if not state.test_suite or not state.test_suite.test_cases:
+        return "end"
+    return "qa_validate_tests"
+
+
+def check_after_convert_json(state: ResearchState) -> Literal["qa_validate_json", "end"]:
+    """
+    Check if JSON conversion succeeded before proceeding to QA.
+    """
+    if _get_status(state) == "failed":
+        return "end"
+    if not state.json_test_cases:
+        return "end"
+    return "qa_validate_json"
+
+
 # -----------------------------------------------------------------------------
 # Graph Definition
 # -----------------------------------------------------------------------------
@@ -169,8 +196,15 @@ def create_research_graph() -> StateGraph:
     )
     workflow.add_edge("fix_research", "qa_validate_research")  # Loop back
 
-    # Test case generation and QA loop
-    workflow.add_edge("generate_tests", "qa_validate_tests")
+    # Test case generation - check for failure before QA
+    workflow.add_conditional_edges(
+        "generate_tests",
+        check_after_generate_tests,
+        {
+            "qa_validate_tests": "qa_validate_tests",
+            "end": END,
+        },
+    )
     workflow.add_conditional_edges(
         "qa_validate_tests",
         should_fix_tests,
@@ -181,8 +215,15 @@ def create_research_graph() -> StateGraph:
     )
     workflow.add_edge("fix_test_cases", "qa_validate_tests")  # Loop back
 
-    # JSON conversion and QA loop
-    workflow.add_edge("convert_json", "qa_validate_json")
+    # JSON conversion - check for failure before QA
+    workflow.add_conditional_edges(
+        "convert_json",
+        check_after_convert_json,
+        {
+            "qa_validate_json": "qa_validate_json",
+            "end": END,
+        },
+    )
     workflow.add_conditional_edges(
         "qa_validate_json",
         should_fix_json,
@@ -278,33 +319,54 @@ async def run_research(
     # Run the graph
     final_state = None
     printed_message_count = len(initial_state.messages)
+    error_occurred = None
 
-    async for event in app.astream(initial_state, config):
-        # Each event is a dict with the node name as key
-        for node_name, node_output in event.items():
-            if "messages" in node_output:
-                # Only print NEW messages (skip already printed ones)
-                all_messages = node_output["messages"]
-                new_messages = all_messages[printed_message_count:]
-                for msg in new_messages:
-                    print(f"[{node_name}] {msg}")
-                printed_message_count = len(all_messages)
+    try:
+        async for event in app.astream(initial_state, config):
+            # Each event is a dict with the node name as key
+            for node_name, node_output in event.items():
+                if "messages" in node_output:
+                    # Only print NEW messages (skip already printed ones)
+                    all_messages = node_output["messages"]
+                    new_messages = all_messages[printed_message_count:]
+                    for msg in new_messages:
+                        print(f"[{node_name}] {msg}")
+                    printed_message_count = len(all_messages)
 
-            # Save step output if enabled
-            if save_outputs and output_dir:
-                _save_node_output(output_dir, node_name, node_output)
+                # Save step output if enabled
+                if save_outputs and output_dir:
+                    _save_node_output(output_dir, node_name, node_output)
 
-        # Update final state
-        final_state = app.get_state(config).values
+            # Update final state
+            final_state = app.get_state(config).values
+
+    except Exception as e:
+        error_occurred = e
+        print(f"[error] Workflow failed: {e}")
+        # Try to get whatever state we have
+        try:
+            final_state = app.get_state(config).values
+        except Exception:
+            pass
 
     # Build final state object
     result_state = ResearchState(**final_state) if final_state else initial_state
 
-    # Save final summary and messages log
+    # If there was an error, update the state to reflect it
+    if error_occurred:
+        result_state.status = WorkflowStatus.FAILED
+        result_state.error_message = str(error_occurred)
+        result_state.messages.append(f"Workflow failed with error: {error_occurred}")
+
+    # Always save final summary and messages log (even on error)
     if save_outputs and output_dir:
         save_messages_log(output_dir, result_state.messages)
         save_final_summary(output_dir, result_state)
         print(f"[complete] Outputs saved to: {output_dir}")
+
+    # Re-raise the error after saving
+    if error_occurred:
+        raise error_occurred
 
     return result_state
 
