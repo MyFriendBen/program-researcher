@@ -36,7 +36,7 @@ This tool automates the research phase of adding new benefit programs to the MyF
 
 ```bash
 # Navigate into this repo (whatever you named it locally)
-cd program_researcher  # or your local directory name
+cd program-researcher
 
 # Install dependencies
 pip install langgraph langchain langchain-anthropic pydantic pydantic-settings \
@@ -170,6 +170,15 @@ output/
     └── linear_ticket.json       # Ticket content
 ```
 
+### Error Handling
+
+If the workflow fails, `SUMMARY.md` will include:
+- **Error details**: The specific error message and context
+- **Next steps**: Actionable guidance on how to fix the issue
+- **Last 15 workflow messages**: Full context of what happened
+
+The summary is always saved, even when the workflow fails, so you can diagnose issues.
+
 ### Disabling Output Saving
 
 To run without saving outputs (e.g., for quick testing):
@@ -208,9 +217,10 @@ python run.py research --no-save \
 - Validates field mappings
 
 ### Step 5: Generate Test Cases
-- Creates 10-15 human-readable scenarios
-- Covers happy path, boundaries, exclusions
-- Includes exact form values
+- Generates test cases **one at a time** to prevent response truncation
+- Creates 14 scenarios across categories (happy path, income thresholds, age thresholds, exclusions, multi-member)
+- Includes exact form values and expected outcomes
+- Resilient to individual failures - continues generating remaining test cases
 
 ### Step 6: QA Validate Tests
 - Reviews test coverage
@@ -237,26 +247,27 @@ python run.py research --no-save \
 ### Running Tests
 
 ```bash
-pytest program_research_agent/tests/
+pytest tests/
 ```
 
 ### Code Quality
 
 ```bash
-ruff check program_research_agent/
-mypy program_research_agent/
+ruff check .
+mypy .
 ```
 
 ## Project Structure
 
 ```
-program_research_agent/
-├── __init__.py           # Package exports
-├── graph.py              # Main LangGraph definition
-├── state.py              # Pydantic state models
-├── config.py             # Configuration management
-├── cli.py                # CLI entry point
-├── nodes/                # Graph node implementations
+program-researcher/
+├── run.py                    # Entry point script (handles module aliasing)
+├── __init__.py               # Package exports
+├── graph.py                  # Main LangGraph definition
+├── state.py                  # Pydantic state models
+├── config.py                 # Configuration management
+├── cli.py                    # CLI commands
+├── nodes/                    # Graph node implementations
 │   ├── gather_links.py
 │   ├── read_screener_fields.py
 │   ├── extract_criteria.py
@@ -266,15 +277,18 @@ program_research_agent/
 │   ├── convert_json.py
 │   ├── qa_json.py
 │   └── linear_ticket.py
-├── tools/                # Utility tools
+├── tools/                    # Utility tools
 │   ├── web_research.py
 │   ├── screener_fields.py
-│   └── schema_validator.py
-├── prompts/              # Agent system prompts
+│   ├── schema_validator.py
+│   └── output_saver.py       # Step output and summary generation
+├── prompts/                  # Agent system prompts
 │   ├── researcher.py
 │   └── qa_agent.py
-├── tests/                # Test suite
-└── output/               # Generated files
+├── tests/                    # Test suite
+├── examples/                 # Example scripts
+│   └── research_csfp.py
+└── output/                   # Generated files (gitignored)
 ```
 
 ## Configuration Options
