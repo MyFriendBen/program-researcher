@@ -66,7 +66,14 @@ async def create_linear_ticket_node(state: ResearchState) -> dict:
         json_file_path = save_json_test_cases(state)
         messages.append(f"Saved JSON test cases to {json_file_path}")
 
+    # Save program config to file
+    config_file_path = None
+    if state.program_config:
+        config_file_path = save_program_config(state)
+        messages.append(f"Saved program config to {config_file_path}")
+
     ticket_content.json_test_file_path = str(json_file_path) if json_file_path else None
+    ticket_content.program_config_file_path = str(config_file_path) if config_file_path else None
 
     # Create ticket via Linear API (if configured)
     ticket_url = None
@@ -102,40 +109,139 @@ def build_ticket_content(state: ResearchState) -> LinearTicketContent:
 
     # Description
     description_parts = [
-        f"## Program: {state.program_name}",
-        f"**State**: {state.state_code.upper()}",
-        f"**White Label**: {state.white_label}",
-        f"**Research Date**: {date.today().isoformat()}",
+        "## Program Details",
         "",
-        "## Overview",
+        f"- **Program**: {state.program_name}",
+        f"- **State**: {state.state_code.upper()}",
+        f"- **White Label**: {state.white_label}",
+        f"- **Research Date**: {date.today().isoformat()}",
         "",
     ]
+
+    # Add eligibility criteria with screener field mappings
+    if state.field_mapping and state.field_mapping.criteria_can_evaluate:
+        description_parts.extend([
+            "## Eligibility Criteria",
+            "",
+        ])
+
+        for i, criterion in enumerate(state.field_mapping.criteria_can_evaluate, 1):
+            description_parts.extend([
+                f"{i}. **{criterion.criterion}**",
+            ])
+
+            # Add screener field details
+            if criterion.screener_fields:
+                description_parts.append("   - Screener fields:")
+                for field in criterion.screener_fields:
+                    description_parts.append(f"     - `{field}`")
+
+            # Add evaluation logic if available
+            if criterion.evaluation_logic:
+                description_parts.append(f"   - Logic: `{criterion.evaluation_logic}`")
+
+            # Add source reference
+            if criterion.source_reference:
+                description_parts.append(f"   - Source: {criterion.source_reference}")
+
+            description_parts.append("")
+
+    # Add benefit value information if available
+    description_parts.extend([
+        "## Benefit Value",
+        "",
+    ])
+
+    # Try to extract benefit amount from test cases
+    if state.test_suite and state.test_suite.test_cases:
+        eligible_test = next((tc for tc in state.test_suite.test_cases if tc.expected_eligible), None)
+        if eligible_test and eligible_test.expected_amount:
+            description_parts.append(f"- **Estimated Annual Value**: ${eligible_test.expected_amount}/year")
+            description_parts.append("- See test cases for calculation details")
+        else:
+            description_parts.append("- Amount varies by household - see test cases")
+    else:
+        description_parts.append("- See research documentation for benefit amounts")
+
+    description_parts.append("")
+
+    # Add data gaps (critical for implementation)
+    if state.field_mapping and state.field_mapping.criteria_cannot_evaluate:
+        description_parts.extend([
+            "## Data Gaps",
+            "",
+            "⚠️  The following criteria cannot be fully evaluated with current screener fields:",
+            "",
+        ])
+
+        for i, criterion in enumerate(state.field_mapping.criteria_cannot_evaluate, 1):
+            description_parts.extend([
+                f"{i}. **{criterion.criterion}**",
+            ])
+
+            if criterion.notes:
+                description_parts.append(f"   - Note: {criterion.notes}")
+
+            if criterion.source_reference:
+                description_parts.append(f"   - Source: {criterion.source_reference}")
+
+            description_parts.append(f"   - Impact: {criterion.impact}")
+            description_parts.append("")
 
     # Add field mapping summary
     if state.field_mapping:
         description_parts.extend([
-            "### Eligibility Criteria Coverage",
+            "## Implementation Coverage",
             "",
-            f"- **Evaluable criteria**: {len(state.field_mapping.criteria_can_evaluate)}",
-            f"- **Data gaps**: {len(state.field_mapping.criteria_cannot_evaluate)}",
+            f"- ✅ Evaluable criteria: {len(state.field_mapping.criteria_can_evaluate)}",
+            f"- ⚠️  Data gaps: {len(state.field_mapping.criteria_cannot_evaluate)}",
             "",
             state.field_mapping.summary,
             "",
         ])
 
-        if state.field_mapping.recommendations:
-            description_parts.append("### Recommendations")
-            for rec in state.field_mapping.recommendations:
-                description_parts.append(f"- {rec}")
-            description_parts.append("")
-
     # Add source documentation
-    description_parts.append("### Source Documentation")
+    description_parts.append("## Research Sources")
     description_parts.append("")
     if state.link_catalog:
         for link in state.link_catalog.links[:10]:
             description_parts.append(f"- [{link.title}]({link.url})")
     description_parts.append("")
+
+    # Add program configuration JSON (embed in ticket)
+    if state.program_config:
+        config_json = json.dumps(state.program_config.model_dump(), indent=2)
+        description_parts.extend([
+            "## Program Configuration",
+            "",
+            "Django admin import configuration (ready to use):",
+            "",
+            "```json",
+            config_json,
+            "```",
+            "",
+            "**Human Review Checklist:**",
+            "- [ ] Verify program name and description are accurate",
+            "- [ ] Confirm application link is correct",
+            "- [ ] Add navigator contacts if available",
+            "- [ ] Review required documents list",
+            "- [ ] Check legal status requirements",
+            "",
+        ])
+
+    # Add reference to local research output
+    if state.output_dir:
+        description_parts.extend([
+            "## Research Output",
+            "",
+            f"Local path: `{state.output_dir}`",
+            "",
+            "Files generated:",
+            "- Program config: `{white_label}_{program_name}_initial_config.json`",
+            "- Test cases: `{white_label}_{program_name}_test_cases.json`",
+            "- Full research data in output directory",
+            "",
+        ])
 
     description = "\n".join(description_parts)
 
@@ -187,9 +293,18 @@ def build_ticket_content(state: ResearchState) -> LinearTicketContent:
 
 
 def save_json_test_cases(state: ResearchState) -> str:
-    """Save JSON test cases to a file."""
+    """Save JSON test cases to ticket_content subdirectory."""
+    from pathlib import Path
+
     filename = f"{state.white_label}_{state.program_name}_test_cases.json"
-    file_path = get_output_path(filename)
+
+    # Use ticket_content subdirectory within the timestamped output directory
+    if state.output_dir:
+        ticket_dir = Path(state.output_dir) / "ticket_content"
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        file_path = ticket_dir / filename
+    else:
+        file_path = get_output_path(filename)
 
     json_data = [tc.model_dump() for tc in state.json_test_cases]
 
@@ -199,10 +314,42 @@ def save_json_test_cases(state: ResearchState) -> str:
     return str(file_path)
 
 
+def save_program_config(state: ResearchState) -> str:
+    """Save program configuration to ticket_content subdirectory."""
+    from pathlib import Path
+
+    filename = f"{state.white_label}_{state.program_name}_initial_config.json"
+
+    # Use ticket_content subdirectory within the timestamped output directory
+    if state.output_dir:
+        ticket_dir = Path(state.output_dir) / "ticket_content"
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        file_path = ticket_dir / filename
+    else:
+        file_path = get_output_path(filename)
+
+    # Convert Pydantic model to dict
+    config_dict = state.program_config.model_dump()
+
+    with open(file_path, "w") as f:
+        json.dump(config_dict, indent=2, fp=f)
+
+    return str(file_path)
+
+
 def save_ticket_content_locally(content: LinearTicketContent, state: ResearchState) -> str:
-    """Save ticket content to a local markdown file."""
+    """Save ticket content to a local markdown file in ticket_content subdirectory."""
+    from pathlib import Path
+
     filename = f"{state.white_label}_{state.program_name}_ticket.md"
-    file_path = get_output_path(filename)
+
+    # Use ticket_content subdirectory within the timestamped output directory
+    if state.output_dir:
+        ticket_dir = Path(state.output_dir) / "ticket_content"
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        file_path = ticket_dir / filename
+    else:
+        file_path = get_output_path(filename)
 
     lines = [
         f"# {content.title}",
@@ -232,6 +379,13 @@ def save_ticket_content_locally(content: LinearTicketContent, state: ResearchSta
             "",
             "## JSON Test Cases",
             f"File: `{content.json_test_file_path}`",
+        ])
+
+    if content.program_config_file_path:
+        lines.extend([
+            "",
+            "## Program Configuration",
+            f"File: `{content.program_config_file_path}`",
         ])
 
     with open(file_path, "w") as f:

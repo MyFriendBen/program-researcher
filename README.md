@@ -19,7 +19,9 @@ This tool automates the research phase of adding new benefit programs to the MyF
 │                                                        ↓                    │
 │  Generate Tests → QA Validate Tests → [Fix Loop] → Convert JSON             │
 │                                                        ↓                    │
-│  QA Validate JSON → [Fix Loop] → Create Linear Ticket → END                 │
+│  QA Validate JSON → [Fix Loop] → Generate Program Config                    │
+│                                                        ↓                    │
+│                                              Create Ticket → END            │
 │                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -29,8 +31,9 @@ This tool automates the research phase of adding new benefit programs to the MyF
 - **Researcher Agent**: Gathers documentation, extracts eligibility criteria, maps to screener fields, generates test cases
 - **QA Agent**: Adversarial reviewer that validates research accuracy and test coverage
 - **Iterative Loops**: QA issues trigger fixes until quality threshold met (max 3 iterations)
+- **Program Config Generation**: Auto-generates Django admin import configuration
 - **JSON Output**: Test cases formatted for the pre-validation system
-- **Linear Integration**: Creates implementation tickets with acceptance criteria
+- **Linear Integration**: Creates implementation tickets with acceptance criteria (optional)
 
 ## Installation
 
@@ -146,9 +149,10 @@ The tool produces outputs at each step and saves them to timestamped directories
 4. **QA Results**: Validation results at each QA step (with iteration numbers)
 5. **Human Test Cases**: 10-15 scenarios for manual QA testing
 6. **JSON Test Cases**: Test data in `pre_validation_schema.json` format
-7. **Linear Ticket**: Implementation ticket with acceptance criteria
-8. **Workflow Log**: Complete execution log
-9. **Summary**: Markdown summary of the research run
+7. **Program Config**: Django admin import configuration (ready to use)
+8. **Linear Ticket**: Implementation ticket with acceptance criteria (if Linear configured)
+9. **Workflow Log**: Complete execution log
+10. **Summary**: Markdown summary of the research run
 
 ### Output Directory Structure
 
@@ -156,18 +160,22 @@ Each research run creates a timestamped directory:
 
 ```
 output/
-└── il_csfp_20240115_143022/     # Timestamped run directory
-    ├── SUMMARY.md               # High-level summary with metrics
-    ├── workflow_log.txt         # Complete execution log
-    ├── gather_links.json        # Link catalog
-    ├── screener_fields.json     # Available screener fields
-    ├── extract_criteria.json    # Eligibility criteria and field mapping
-    ├── qa_research_iter1.json   # QA validation results (per iteration)
-    ├── generate_tests.json      # Human-readable test scenarios
-    ├── qa_tests_iter1.json      # Test case QA results
-    ├── convert_json.json        # JSON test cases
-    ├── qa_json_iter1.json       # JSON QA results
-    └── linear_ticket.json       # Ticket content
+└── il_csfp_20240115_143022/            # Timestamped run directory
+    ├── ticket_content/                  # Files for ticket/review
+    │   ├── il_csfp_initial_config.json # Django admin config
+    │   ├── il_csfp_test_cases.json     # JSON test cases
+    │   └── il_csfp_ticket.md            # Ticket markdown
+    ├── SUMMARY.md                       # High-level summary with metrics
+    ├── workflow_log.txt                 # Complete execution log
+    ├── gather_links.json                # Link catalog
+    ├── screener_fields.json             # Available screener fields
+    ├── extract_criteria.json            # Eligibility criteria and field mapping
+    ├── qa_research_iter1.json           # QA validation results (per iteration)
+    ├── generate_tests.json              # Human-readable test scenarios
+    ├── qa_tests_iter1.json              # Test case QA results
+    ├── convert_json.json                # JSON test cases
+    ├── qa_json_iter1.json               # JSON QA results
+    └── generate_program_config.json     # Program config generation output
 ```
 
 ### Error Handling
@@ -237,10 +245,17 @@ python run.py research --no-save \
 - Verifies schema compliance
 - Checks for data mismatches
 
-### Step 9: Create Linear Ticket
+### Step 9: Generate Program Config
+- Creates Django admin import configuration
+- Extracts official program name and description from research
+- Identifies application links and required documents
+- Generates config ready for human review
+
+### Step 10: Create Linear Ticket (Optional)
 - Formats acceptance criteria
 - Includes source documentation
-- Attaches JSON test file path
+- Embeds program configuration
+- Attaches test case files
 
 ## Development
 

@@ -352,6 +352,36 @@ class JSONTestCase(BaseModel):
 
 
 # -----------------------------------------------------------------------------
+# Program Configuration Model (for Django admin import)
+# -----------------------------------------------------------------------------
+
+
+class ProgramConfig(BaseModel):
+    """
+    Program configuration for Django admin import.
+
+    Matches the format used by import_program_config_data management command.
+    """
+
+    white_label: dict[str, str] = Field(description="White label config: {'code': 'il'}")
+    program_category: dict[str, str] = Field(
+        description="Program category: {'external_name': 'il_food'}"
+    )
+    program: dict[str, Any] = Field(
+        description="Program metadata: name, description, links, etc."
+    )
+    warning_message: dict[str, Any] | None = Field(
+        default=None, description="Optional warning message configuration"
+    )
+    documents: list[dict[str, str]] = Field(
+        default_factory=list, description="Required documents list"
+    )
+    navigators: list[dict[str, Any]] = Field(
+        default_factory=list, description="Local navigator/contact information"
+    )
+
+
+# -----------------------------------------------------------------------------
 # Linear Ticket Model
 # -----------------------------------------------------------------------------
 
@@ -365,6 +395,9 @@ class LinearTicketContent(BaseModel):
     test_scenarios_summary: str
     source_documentation: list[str]
     json_test_file_path: str | None = None
+    program_config_file_path: str | None = Field(
+        default=None, description="Path to program config JSON file"
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -411,6 +444,9 @@ class ResearchState(BaseModel):
     # ----- JSON QA Loop -----
     json_qa_result: QAValidationResult | None = Field(default=None)
     json_iteration: int = Field(default=0)
+
+    # ----- Program Configuration -----
+    program_config: ProgramConfig | None = Field(default=None)
 
     # ----- Linear Ticket -----
     linear_ticket: LinearTicketContent | None = Field(default=None)

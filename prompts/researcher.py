@@ -7,6 +7,7 @@ The researcher agent handles:
 - Field mapping to screener
 - Test case generation
 - JSON conversion
+- Program configuration generation
 """
 
 SYSTEM_PROMPT = """You are a benefits program researcher specializing in government assistance programs. Your role is to thoroughly research benefit programs using official sources, extract precise eligibility criteria, and generate comprehensive test scenarios.
@@ -499,3 +500,171 @@ RESEARCHER_PROMPTS = {
     "fix_issues": FIX_ISSUES_PROMPT,
     "test_case_categories": TEST_CASE_CATEGORIES,
 }
+
+
+GENERATE_PROGRAM_CONFIG_PROMPT = """## Task: Generate Program Configuration JSON
+
+Generate a Django admin import configuration file for this benefit program using the research data provided below.
+
+### Program Information
+- **Program Name**: {program_name}
+- **State**: {state_code}
+- **White Label**: {white_label}
+
+### Research Context
+
+The following research has been completed for this program. Use this data to populate the configuration fields:
+
+{research_context}
+
+### Instructions
+
+**CRITICAL**: Use the research context above to extract:
+1. **Official program name** from source documentation (not abbreviations)
+2. **Comprehensive description** from program overviews and eligibility summaries
+3. **Application link** from "Application" category links in sources
+4. **Learn more link** from official program pages
+5. **Legal status requirements** from eligibility criteria (citizenship/immigration requirements)
+6. **Required documents** common to this type of benefit program
+
+Generate a JSON configuration matching this format:
+
+```json
+{{
+  "white_label": {{
+    "code": "{white_label}"
+  }},
+  "program_category": {{
+    "external_name": "<whitelabel>_<category>"
+  }},
+  "program": {{
+    "name_abbreviated": "{white_label}_{program_name}",
+    "year": "2025",
+    "legal_status_required": ["citizen", "refugee", ...],
+    "name": "Full Program Name",
+    "description": "Comprehensive description of the program, what it provides, and who it serves. Include any work requirements or special rules.",
+    "description_short": "Brief one-line description",
+    "learn_more_link": "https://official.gov/program",
+    "apply_button_link": "https://apply.here/",
+    "apply_button_description": "Apply for [Program]",
+    "estimated_application_time": "30 - 60 minutes",
+    "estimated_delivery_time": "30 days",
+    "estimated_value": "",
+    "website_description": "Short description for website display"
+  }},
+  "documents": [
+    {{
+      "external_name": "{white_label}_home",
+      "text": "Proof of home address (ex: lease, utility bill)",
+      "link_url": "",
+      "link_text": ""
+    }},
+    {{
+      "external_name": "id_proof",
+      "text": "Proof of identity",
+      "link_url": "",
+      "link_text": ""
+    }}
+  ],
+  "navigators": []
+}}
+```
+
+### Field-by-Field Instructions
+
+**program_category.external_name**:
+- Determine category from program type:
+  - Food programs → "{white_label}_food"
+  - Healthcare/Medicaid → "{white_label}_healthcare"
+  - Tax credits → "{white_label}_tax"
+  - Housing → "{white_label}_housing"
+  - Childcare → "{white_label}_childcare"
+  - Cash assistance → "{white_label}_cash"
+
+**program.legal_status_required**:
+- Extract from eligibility criteria
+- Common values: ["citizen", "gc_5plus", "gc_5less", "refugee", "otherWithWorkPermission", "non_citizen"]
+- If unclear, use: ["citizen"]
+
+**program.name**:
+- Use official program name with acronym from research sources
+- Example: "Supplemental Nutrition Assistance Program (SNAP)"
+- NOT abbreviations like "SNAP" or "Snap" alone
+- Extract from program overview or source titles
+
+**program.description**:
+- Write 2 concise paragraphs (100-150 words total) at 8th grade reading level:
+  1. **What it provides**: Clear, simple explanation of the benefit (e.g., "monthly food packages", "help paying for healthcare")
+  2. **Who can get it**: Basic eligibility in plain language (e.g., "seniors age 60 or older with low income")
+- Keep sentences short and direct
+- Avoid jargon and technical terms
+- Include specific benefit amounts if available (e.g., "$60/month in groceries")
+- Mention any important rules briefly (e.g., "work requirements may apply")
+- Use information from eligibility criteria but simplify for general audience
+- Think: someone skimming quickly needs to understand the basics
+
+**program.description_short**:
+- One-line description (5-10 words)
+- Extract key benefit from description
+- Example: "Monthly food packages for eligible seniors"
+
+**program.learn_more_link**:
+- Use the primary official source URL (usually .gov domain)
+- Look for "Official Program" links in research sources
+
+**program.apply_button_link**:
+- Search for links with "Application" category in research
+- Look for URLs containing keywords: apply, application, enroll, register
+- Check source documentation for "How to Apply" or "Apply Now" links
+- If no application link found, use learn_more_link
+
+**program.apply_button_description**:
+- Format: "Apply for [State] [Program]"
+- Example: "Apply for IL CSFP"
+
+**program.estimated_application_time**:
+- Extract from sources if available
+- Otherwise use: "Varies"
+
+**program.estimated_delivery_time**:
+- Extract from sources if available  
+- Example: "30 days", "Within 2 weeks"
+- Leave empty if unknown
+
+**documents**:
+- Generate common required documents based on program type
+- Use these external_name patterns:
+  - "{white_label}_home" → Proof of address
+  - "{white_label}_ssn" → Social Security Number
+  - "id_proof" → Proof of identity
+  - "{white_label}_earned_income" → Proof of income
+  - "{white_label}_expenses" → Proof of expenses
+  - "{white_label}_us_status" → Proof of legal status
+- Add program-specific documents if mentioned in sources
+
+**navigators**:
+- Leave as empty array []
+- Human will add local contact information
+
+### Output Requirements
+
+1. Return ONLY valid JSON (no markdown, no explanation)
+2. Ensure all required fields are present
+3. Use empty string "" for unknown values, not null
+4. Keep descriptions clear and non-technical
+5. Double-check JSON syntax (commas, quotes, brackets)
+6. **DO NOT use abbreviations or placeholder text** - use actual research data
+7. **Descriptions must be complete** - not truncated or abbreviated
+
+### Quality Checklist
+
+Before returning, verify:
+- [ ] Program name is official full name (not "Csfp" or "CSFP" alone)
+- [ ] Description is 2 short paragraphs, 8th grade reading level, 100-150 words
+- [ ] Description is clear and concise - no jargon or complex terms
+- [ ] Application link extracted from sources (not generic or empty)
+- [ ] Legal status requirements reflect eligibility criteria
+- [ ] Documents list is relevant to program type
+
+Return the complete JSON configuration now:
+"""

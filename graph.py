@@ -19,6 +19,7 @@ from langgraph.graph import END, StateGraph
 from .nodes.convert_json import convert_to_json_node, fix_json_node
 from .nodes.extract_criteria import extract_criteria_node
 from .nodes.gather_links import gather_links_node
+from .nodes.generate_program_config import generate_program_config_node
 from .nodes.generate_tests import fix_test_cases_node, generate_tests_node
 from .nodes.linear_ticket import create_linear_ticket_node
 from .nodes.qa_json import qa_validate_json_node
@@ -174,6 +175,7 @@ def create_research_graph() -> StateGraph:
     workflow.add_node("convert_json", convert_to_json_node)
     workflow.add_node("qa_validate_json", qa_validate_json_node)
     workflow.add_node("fix_json", fix_json_node)
+    workflow.add_node("generate_program_config", generate_program_config_node)
     workflow.add_node("create_ticket", create_linear_ticket_node)
 
     # Define the flow
@@ -229,10 +231,13 @@ def create_research_graph() -> StateGraph:
         should_fix_json,
         {
             "fix_json": "fix_json",
-            "create_ticket": "create_ticket",
+            "create_ticket": "generate_program_config",  # Changed: go to config generation first
         },
     )
     workflow.add_edge("fix_json", "qa_validate_json")  # Loop back
+
+    # Program config generation, then ticket creation
+    workflow.add_edge("generate_program_config", "create_ticket")
 
     # Final step
     workflow.add_edge("create_ticket", END)
@@ -388,6 +393,7 @@ def _save_node_output(output_dir: Path | str, node_name: str, node_output: dict)
         "convert_json": ("json_test_cases", None),
         "qa_validate_json": ("json_qa_result", "json_iteration"),
         "fix_json": (None, None),
+        "generate_program_config": ("program_config", None),
         "create_ticket": ("linear_ticket", None),
     }
 
