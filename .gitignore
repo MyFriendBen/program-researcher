@@ -56,3 +56,7 @@ dmypy.json
 # OS
 .DS_Store
 Thumbs.db
+
+# Working directory for temporary docs, analysis, and decision files
+# (Use these to inform PRs but don't commit them)
+working/

@@ -420,6 +420,10 @@ class ResearchState(BaseModel):
 
     # ----- Step 1: Link Discovery -----
     link_catalog: LinkCatalog | None = Field(default=None)
+    fetched_content_refs: dict[str, str] | None = Field(
+        default=None,
+        description="Map of source URL to file path where fetched content is saved",
+    )
 
     # ----- Step 2: Screener Fields -----
     screener_fields: ScreenerFieldCatalog | None = Field(default=None)

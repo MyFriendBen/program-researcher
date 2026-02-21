@@ -19,6 +19,7 @@ from ..state import (
     ResearchState,
     WorkflowStatus,
 )
+from ..tools.output_saver import save_fetched_content
 from ..tools.web_research import (
     categorize_url,
     extract_legislative_citations,
@@ -58,9 +59,10 @@ async def gather_links_node(state: ResearchState) -> dict:
         )
 
     # Fetch each source and extract links
-    fetched_content: dict[str, str] = {}
+    # Save fetched content to files and track file paths
+    fetched_content_refs: dict[str, str] = {}
 
-    for url in state.source_urls:
+    for index, url in enumerate(state.source_urls):
         messages.append(f"Fetching {url}...")
         result = await fetch_url(url)
 
@@ -72,7 +74,14 @@ async def gather_links_node(state: ResearchState) -> dict:
                     link.accessible = False
             continue
 
-        fetched_content[url] = result.content
+        # Save content to file
+        if state.output_dir:
+            from pathlib import Path
+            output_dir = Path(state.output_dir)
+            filepath = save_fetched_content(output_dir, url, result.content, index)
+            fetched_content_refs[url] = str(filepath)
+            messages.append(f"  Saved content to {filepath.name}")
+
         messages.append(f"  Found {len(result.links)} links in {url}")
 
         # Add discovered links
@@ -119,10 +128,21 @@ async def gather_links_node(state: ResearchState) -> dict:
     messages.append(f"Total links discovered: {len(all_links)}")
 
     # Use LLM to enhance titles and summaries
-    if fetched_content and settings.anthropic_api_key:
+    # Load content from files for enhancement
+    if fetched_content_refs and settings.anthropic_api_key:
         messages.append("Enhancing link metadata with AI...")
+        from pathlib import Path
+
+        # Load content from files temporarily for enhancement
+        fetched_content_for_enhancement = {}
+        for url, filepath in fetched_content_refs.items():
+            try:
+                fetched_content_for_enhancement[url] = Path(filepath).read_text(encoding='utf-8')
+            except Exception as e:
+                messages.append(f"  Warning: Could not load {filepath} for enhancement: {e}")
+
         enhanced_links = await enhance_links_with_llm(
-            all_links, fetched_content, state.program_name, state.state_code
+            all_links, fetched_content_for_enhancement, state.program_name, state.state_code
         )
         if enhanced_links:
             all_links = enhanced_links
@@ -140,6 +160,7 @@ async def gather_links_node(state: ResearchState) -> dict:
 
     return {
         "link_catalog": catalog,
+        "fetched_content_refs": fetched_content_refs,  # File paths for extract_criteria to use
         "messages": messages,
     }
 

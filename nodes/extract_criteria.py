@@ -18,6 +18,7 @@ from ..state import (
     ResearchState,
 )
 from ..tools.screener_fields import format_fields_for_prompt
+from ..tools.vision_helper import is_pdf_vision_content
 
 
 async def extract_criteria_node(state: ResearchState) -> dict:
@@ -56,12 +57,46 @@ async def extract_criteria_node(state: ResearchState) -> dict:
 
     messages.append("Analyzing documentation with AI...")
 
-    response = await llm.ainvoke(
-        [
-            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-            HumanMessage(content=prompt),
-        ]
-    )
+    # Check if we have any PDF vision content to send
+    # Load content from files
+    pdf_vision_content = None
+    if state.fetched_content_refs:
+        from pathlib import Path
+
+        for url, filepath in state.fetched_content_refs.items():
+            try:
+                content = Path(filepath).read_text(encoding='utf-8')
+                if is_pdf_vision_content(content):
+                    pdf_vision_content = (url, content)
+                    messages.append(f"  Using vision processing for PDF: {url}")
+                    messages.append(f"  Loaded vision data from {filepath}")
+                    break
+            except Exception as e:
+                messages.append(f"  Warning: Could not load {filepath}: {e}")
+
+    # Build message content
+    if pdf_vision_content:
+        from ..tools.vision_helper import create_vision_message_content
+
+        url, content_str = pdf_vision_content
+        pdf_data = json.loads(content_str)
+
+        # Create multi-modal message with text + images
+        message_content = create_vision_message_content(pdf_data, prompt)
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=message_content),
+            ]
+        )
+    else:
+        # Regular text-only message
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
 
     # Parse response
     response_text = response.content

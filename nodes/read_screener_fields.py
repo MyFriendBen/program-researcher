@@ -13,7 +13,7 @@ async def read_screener_fields_node(state: ResearchState) -> dict:
     Read screener field definitions from the codebase.
 
     This node reads:
-    - Django models (benefits-be/screener/models.py)
+    - Django models (benefits-api/screener/models.py)
     - TypeScript types (benefits-fe/src/Types/FormData.ts)
 
     And extracts all available fields for eligibility calculations.

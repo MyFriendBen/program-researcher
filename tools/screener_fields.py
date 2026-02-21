@@ -19,7 +19,7 @@ def get_screener_fields() -> ScreenerFieldCatalog:
     Read screener field definitions from the codebase.
 
     Parses:
-    - benefits-be/screener/models.py for Django model fields
+    - benefits-api/screener/models.py for Django model fields
     - benefits-fe/src/Types/FormData.ts for frontend type definitions
 
     Returns:
