@@ -27,6 +27,75 @@ def get_research_output_dir(white_label: str, program_name: str) -> Path:
     return output_dir
 
 
+def save_fetched_content(
+    output_dir: Path,
+    url: str,
+    content: str,
+    index: int,
+) -> Path:
+    """
+    Save fetched content to a file in the fetched/ subdirectory.
+
+    Args:
+        output_dir: The research output directory
+        url: The source URL (used to generate filename)
+        content: The fetched content (HTML, JSON string with vision data, or error message)
+        index: Index of this source in the source_urls list
+
+    Returns:
+        Path to the saved file
+    """
+    # Create fetched subdirectory
+    fetched_dir = output_dir / "fetched"
+    fetched_dir.mkdir(exist_ok=True)
+
+    # Sanitize URL for filename (take last part of path, remove special chars)
+    url_parts = url.rstrip('/').split('/')
+    url_suffix = url_parts[-1] if url_parts else 'source'
+    # Remove query params and special chars
+    url_suffix = url_suffix.split('?')[0].split('#')[0]
+    url_suffix = ''.join(c if c.isalnum() or c in '.-_' else '_' for c in url_suffix)
+    # Limit length
+    url_suffix = url_suffix[:100]
+
+    # Determine file extension based on content
+    from ..tools.vision_helper import is_pdf_vision_content
+
+    if is_pdf_vision_content(content):
+        # Vision data - save as JSON
+        ext = "pdf.json"
+    elif content.startswith("[PDF Document"):
+        # PDF that failed vision - save as text log
+        ext = "pdf.txt"
+    elif "<html" in content.lower() or "<!doctype" in content.lower():
+        # HTML content
+        ext = "html"
+    else:
+        # Default to text
+        ext = "txt"
+
+    # Build filename: {index}_{sanitized_url}.{ext}
+    filename = f"{index}_{url_suffix}.{ext}"
+    filepath = fetched_dir / filename
+
+    # Save content
+    filepath.write_text(content, encoding='utf-8')
+
+    # Also save a metadata file with URL and fetch info
+    metadata = {
+        "url": url,
+        "index": index,
+        "fetched_at": datetime.now().isoformat(),
+        "content_size_bytes": len(content),
+        "filepath": str(filepath),
+    }
+    metadata_path = fetched_dir / f"{index}_{url_suffix}.metadata.json"
+    with open(metadata_path, 'w') as f:
+        json.dump(metadata, f, indent=2)
+
+    return filepath
+
+
 def save_step_output(
     output_dir: Path,
     step_name: str,
@@ -260,8 +329,13 @@ def save_final_summary(
     # List all files in the output directory
     for f in sorted(output_dir.glob("*")):
         if f.name != "SUMMARY.md":
-            desc = _get_file_description(f.name)
-            lines.append(f"| `{f.name}` | {desc} |")
+            if f.is_dir():
+                # Count files in subdirectory
+                file_count = len(list(f.glob("*")))
+                lines.append(f"| `{f.name}/` | Directory with {file_count} files |")
+            else:
+                desc = _get_file_description(f.name)
+                lines.append(f"| `{f.name}` | {desc} |")
 
     lines.append("")
 

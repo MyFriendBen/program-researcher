@@ -45,6 +45,7 @@ async def generate_program_config_node(state: ResearchState) -> dict:
         model=settings.researcher_model,
         temperature=0,
         max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
     )
 

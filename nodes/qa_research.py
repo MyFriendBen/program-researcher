@@ -43,6 +43,7 @@ async def qa_validate_research_node(state: ResearchState) -> dict:
         model=settings.qa_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
     )
 
@@ -82,7 +83,7 @@ async def qa_validate_research_node(state: ResearchState) -> dict:
         for item in data.get("issues", []):
             issues.append(
                 QAIssue(
-                    severity=IssueSeverity(item.get("severity", "minor")),
+                    severity=IssueSeverity(item.get("severity") or "minor"),
                     issue_type=item.get("issue_type", "unknown"),
                     description=item.get("description", ""),
                     location=item.get("location", ""),
@@ -217,6 +218,7 @@ async def fix_research_node(state: ResearchState) -> dict:
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
     )
 

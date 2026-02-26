@@ -30,12 +30,12 @@ class Settings(BaseSettings):
 
     # ----- Model Configuration -----
     researcher_model: str = Field(
-        default="claude-sonnet-4-20250514",
-        description="Model to use for researcher agent",
+        default="claude-sonnet-4-5-20250929",
+        description="Model to use for researcher agent (extraction, generation)",
     )
     qa_model: str = Field(
-        default="claude-sonnet-4-20250514",
-        description="Model to use for QA agent",
+        default="claude-opus-4-6",
+        description="Model to use for QA agent (validation, error detection)",
     )
     model_temperature: float = Field(
         default=0.1,
@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     model_max_tokens: int = Field(
         default=8192,
         description="Maximum tokens for model responses",
+    )
+    model_max_retries: int = Field(
+        default=5,
+        description="Maximum retries for API calls (handles transient 500 errors)",
     )
 
     # ----- Workflow Configuration -----
@@ -76,11 +80,11 @@ class Settings(BaseSettings):
 
     # ----- Backend Paths (for reading screener fields) -----
     backend_models_path: Path = Field(
-        default=Path(__file__).parent.parent / "benefits-be" / "screener" / "models.py",
+        default=Path(__file__).parent.parent / "benefits-api" / "screener" / "models.py",
         description="Path to Django screener models",
     )
     frontend_types_path: Path = Field(
-        default=Path(__file__).parent.parent / "benefits-fe" / "src" / "Types" / "FormData.ts",
+        default=Path(__file__).parent.parent / "benefits-calculator" / "src" / "Types" / "FormData.ts",
         description="Path to frontend type definitions",
     )
 

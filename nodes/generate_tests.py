@@ -39,6 +39,7 @@ async def generate_tests_node(state: ResearchState) -> dict:
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=4096,  # Smaller max tokens for single test cases
+        max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
     )
 
@@ -69,6 +70,7 @@ async def generate_tests_node(state: ResearchState) -> dict:
             for tc in test_cases
         ) or "None yet"
 
+        today = date.today()
         prompt = RESEARCHER_PROMPTS["generate_single_test_case"].format(
             program_name=state.program_name,
             state_code=state.state_code,
@@ -78,6 +80,8 @@ async def generate_tests_node(state: ResearchState) -> dict:
             scenario_number=i,
             category_description=description,
             previous_scenarios=previous,
+            current_date=today.isoformat(),
+            current_year=today.year,
         )
 
         try:

@@ -91,9 +91,30 @@ async def fetch_url(url: str, extract_links: bool = True) -> FetchResult:
                         if href.startswith(("http://", "https://")):
                             links.append({"text": text[:200], "href": href})
 
-            # Handle PDF - return basic info
+            # Handle PDF - use vision extraction
             elif "application/pdf" in content_type:
-                content = f"[PDF Document - {len(response.content)} bytes]"
+                from .pdf_vision import pdf_to_images, encode_image_base64
+
+                try:
+                    # Convert PDF to images
+                    page_images = pdf_to_images(response.content, dpi=150, max_pages=10)
+
+                    # Store images for vision processing
+                    # The content will indicate this is a vision-ready PDF
+                    content = {
+                        "type": "pdf_vision",
+                        "url": url,
+                        "page_count": len(page_images),
+                        "images_base64": [encode_image_base64(img) for img in page_images],
+                        "size_bytes": len(response.content),
+                    }
+                    # Convert to JSON string for storage
+                    import json
+
+                    content = json.dumps(content)
+                except Exception as e:
+                    # Fallback if vision conversion fails
+                    content = f"[PDF Document - {len(response.content)} bytes - Vision extraction failed: {str(e)}]"
 
             # Plain text
             else:
