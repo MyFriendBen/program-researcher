@@ -177,6 +177,7 @@ async def enhance_links_with_llm(
             model=settings.researcher_model,
             temperature=settings.model_temperature,
             max_tokens=settings.model_max_tokens,
+            max_retries=settings.model_max_retries,
             api_key=settings.anthropic_api_key,
         )
 

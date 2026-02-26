@@ -45,6 +45,10 @@ class Settings(BaseSettings):
         default=8192,
         description="Maximum tokens for model responses",
     )
+    model_max_retries: int = Field(
+        default=5,
+        description="Maximum retries for API calls (handles transient 500 errors)",
+    )
 
     # ----- Workflow Configuration -----
     max_qa_iterations: int = Field(

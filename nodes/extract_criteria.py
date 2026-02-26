@@ -45,6 +45,7 @@ async def extract_criteria_node(state: ResearchState) -> dict:
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
     )
 
@@ -124,7 +125,7 @@ async def extract_criteria_node(state: ResearchState) -> dict:
                     screener_fields=item.get("screener_fields"),
                     evaluation_logic=item.get("evaluation_logic"),
                     notes=item.get("notes", ""),
-                    impact=ImpactLevel(item.get("impact", "Medium")),
+                    impact=ImpactLevel(item.get("impact") or "Medium"),
                 )
             )
 
@@ -138,7 +139,7 @@ async def extract_criteria_node(state: ResearchState) -> dict:
                     screener_fields=None,
                     evaluation_logic=None,
                     notes=item.get("notes", ""),
-                    impact=ImpactLevel(item.get("impact", "Medium")),
+                    impact=ImpactLevel(item.get("impact") or "Medium"),
                 )
             )
 

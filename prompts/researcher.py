@@ -433,6 +433,13 @@ Create ONE test scenario for the specified category.
 - **State**: {state_code}
 - **White Label**: {white_label}
 
+### Current Date
+Today is **{current_date}** (year: {current_year}). Use this to calculate all birth years and ages.
+
+### Age Calculation Rule
+To make a person age X: birth_year = {current_year} - X (adjust by 1 if their birth_month hasn't passed yet this year).
+Example: a 65-year-old born in March when today is February 2026 → birth_year = 2026 - 65 - 1 = 1960, birth_month = 3.
+
 ### Eligibility Criteria (that can be evaluated)
 {criteria_can_evaluate}
 
@@ -480,7 +487,7 @@ Return a JSON object for this SINGLE test case:
     {{
       "relationship": "headOfHousehold",
       "birth_month": 3,
-      "birth_year": 1960,
+      "birth_year": 1961,
       "has_income": true,
       "income": {{
         "sSRetirement": 800,
@@ -496,8 +503,8 @@ Return a JSON object for this SINGLE test case:
 
 ### Important
 - Return ONLY the JSON object for this single test case
+- **CRITICAL**: birth_year values MUST be calculated from the current year ({current_year}), not guessed
 - Use realistic values based on current FPL and program thresholds
-- Calculate birth years from current date to get exact ages
 - Ensure the scenario is DIFFERENT from previously generated ones
 - Make sure to test the specific aspect described in the category description
 """
