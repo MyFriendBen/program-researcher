@@ -218,6 +218,8 @@ def format_evaluable_criteria(mapping) -> str:
 async def fix_test_cases_node(state: ResearchState) -> dict:
     """
     Fix issues identified by QA in test cases.
+
+    Parses the QA issues and asks the LLM to fix specific problems in the test suite.
     """
     messages = list(state.messages)
     messages.append("Fixing test case issues identified by QA...")
@@ -226,12 +228,68 @@ async def fix_test_cases_node(state: ResearchState) -> dict:
         messages.append("No issues to fix")
         return {"messages": messages}
 
-    # In a full implementation, would:
-    # 1. Parse the QA issues
-    # 2. Identify which test cases need changes
-    # 3. Ask LLM to fix specific issues
-    # 4. Return updated test_suite
+    if not state.test_suite:
+        messages.append("No test suite to fix")
+        return {"messages": messages}
 
-    messages.append(f"Addressed {len(state.test_case_qa_result.issues)} test case issues")
+    # Format current test suite for LLM
+    current_test_suite = json.dumps(state.test_suite.model_dump(mode="json"), indent=2)
 
+    # Format issues for LLM
+    issues_text = "\n".join(
+        f"- [{i.severity if isinstance(i.severity, str) else i.severity.value}] "
+        f"{i.issue_type}: {i.description} (location: {i.location}) — Fix: {i.suggested_fix}"
+        for i in state.test_case_qa_result.issues
+    )
+
+    llm = ChatAnthropic(
+        model=settings.researcher_model,
+        temperature=settings.model_temperature,
+        max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
+        api_key=settings.anthropic_api_key,
+    )
+
+    prompt = RESEARCHER_PROMPTS["fix_issues"].format(
+        current_output=current_test_suite,
+        qa_issues=issues_text,
+    )
+
+    try:
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+
+        response_text = response.content
+        if isinstance(response_text, list):
+            response_text = response_text[0].get("text", "") if response_text else ""
+
+        # Extract JSON from response
+        json_match = response_text
+        if "```json" in response_text:
+            json_match = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            json_match = response_text.split("```")[1].split("```")[0]
+
+        fixed_data = json.loads(json_match)
+
+        # Reconstruct ScenarioSuite from the fixed data
+        fixed_suite = ScenarioSuite.model_validate(fixed_data)
+
+        messages.append(
+            f"Fixed {len(state.test_case_qa_result.issues)} test case issues. "
+            f"Test suite now contains {len(fixed_suite.test_cases)} test cases."
+        )
+        return {
+            "test_suite": fixed_suite,
+            "messages": messages,
+        }
+
+    except Exception as e:
+        messages.append(f"Error fixing test case issues: {e}")
+
+    messages.append(f"Could not fix {len(state.test_case_qa_result.issues)} test case issues")
     return {"messages": messages}

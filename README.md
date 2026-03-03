@@ -166,7 +166,7 @@ The tool produces outputs at each step and saves them to timestamped directories
 3. **Field Mapping**: Eligibility criteria mapped to screener fields, with data gaps identified
 4. **QA Results**: Validation results at each QA step (with iteration numbers)
 5. **Human Test Cases**: 10-15 scenarios for manual QA testing
-6. **JSON Test Cases**: Test data in `pre_validation_schema.json` format
+6. **JSON Test Cases**: Test data matching the benefits-api schema (`notes`, `household`, `expected_results` top-level keys)
 7. **Program Config**: Django admin import configuration (ready to use)
 8. **Linear Ticket**: Implementation ticket with acceptance criteria (if Linear configured)
 9. **Workflow Log**: Complete execution log
@@ -289,8 +289,9 @@ For typical research (1-2 PDFs): adds ~$0.04 per program run.
 - Checks expected outcomes
 
 ### Step 7: Convert to JSON
-- Transforms to `pre_validation_schema.json` format
-- Validates against schema
+- Transforms human test cases to the benefits-api test case schema format (fetched from GitHub)
+- Top-level structure: `notes` (human-readable label), `household` (members + expenses + white_label), `expected_results` (program_name + eligible + value)
+- Validates each test case against the live schema via `RESEARCH_AGENT_SCHEMA_URL`
 - Calculates ages from birth dates
 
 ### Step 8: QA Validate JSON
@@ -372,6 +373,7 @@ program-researcher/
 | `RESEARCH_AGENT_RESEARCHER_MODEL` | Model for researcher agent | claude-sonnet-4-20250514 |
 | `RESEARCH_AGENT_QA_MODEL` | Model for QA agent | claude-sonnet-4-20250514 |
 | `RESEARCH_AGENT_MAX_QA_ITERATIONS` | Default max QA iterations | 3 |
+| `RESEARCH_AGENT_SCHEMA_URL` | URL to fetch the benefits-api test case JSON schema | GitHub raw URL for `test_case_schema.json` |
 
 ## License
 
