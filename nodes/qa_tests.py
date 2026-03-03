@@ -168,11 +168,28 @@ def format_test_cases(suite) -> str:
             lines.append(f"**Member {i+1}**:")
             lines.append(f"  - Relationship: {member.get('relationship', 'unknown')}")
             lines.append(f"  - Birth: {member.get('birth_month', '?')}/{member.get('birth_year', '?')}")
-            if member.get('income'):
-                income = member['income']
-                income_items = [f"{k}: ${v}" for k, v in income.items() if k != 'income_frequency' and v]
+            # Handle new income_streams format
+            if member.get("income_streams") and isinstance(member["income_streams"], list):
+                stream_parts = [
+                    f"{s.get('type', 'other')}: ${s.get('amount', 0)} {s.get('frequency', 'monthly')}"
+                    for s in member["income_streams"]
+                    if isinstance(s, dict)
+                ]
+                if stream_parts:
+                    lines.append(f"  - Income streams: {', '.join(stream_parts)}")
+            # Handle legacy flat income dict format
+            elif member.get("income") and isinstance(member["income"], dict):
+                income = member["income"]
+                income_items = [
+                    f"{k}: ${v}"
+                    for k, v in income.items()
+                    if k not in ("income_frequency", "hours_per_week", "hours_worked") and v
+                ]
                 if income_items:
-                    lines.append(f"  - Income: {', '.join(income_items)} ({income.get('income_frequency', 'monthly')})")
+                    lines.append(
+                        f"  - Income: {', '.join(income_items)} "
+                        f"({income.get('income_frequency', 'monthly')})"
+                    )
             lines.append("")
 
         lines.extend([

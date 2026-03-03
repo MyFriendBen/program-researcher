@@ -10,11 +10,6 @@ from program_research_agent.state import (
     HumanTestCase,
     ImpactLevel,
     IssueSeverity,
-    JSONTestCase,
-    JSONTestCaseExpectedResults,
-    JSONTestCaseHousehold,
-    JSONTestCaseMember,
-    JSONTestCaseMemberInsurance,
     LinkCatalog,
     LinkCatalogEntry,
     LinkCategory,
@@ -165,6 +160,10 @@ class TestTestCaseModels:
                     "relationship": "headOfHousehold",
                     "birth_month": 3,
                     "birth_year": 1953,
+                    "income_streams": [
+                        {"type": "sSRetirement", "amount": 800, "frequency": "monthly"}
+                    ],
+                    "insurance": {"none": True},
                 }
             ],
             citizenship_status="citizen",
@@ -173,40 +172,102 @@ class TestTestCaseModels:
         assert tc.scenario_number == 1
         assert tc.expected_eligible is True
         assert len(tc.steps) == 1
+        assert tc.members_data[0]["income_streams"][0]["type"] == "sSRetirement"
 
-    def test_json_test_case_creation(self):
-        """Test creating a JSON test case."""
-        member = JSONTestCaseMember(
-            relationship="headOfHousehold",
-            birth_month=3,
-            birth_year=1953,
-            age=72,
-            insurance=JSONTestCaseMemberInsurance(none=True),
-        )
-
-        household = JSONTestCaseHousehold(
+    def test_human_test_case_with_hourly_income(self):
+        """Test creating a human test case with hourly income stream."""
+        tc = HumanTestCase(
+            scenario_number=2,
+            title="Hourly Worker",
+            what_checking="Hourly wage earner",
+            category="income_threshold",
+            expected_eligible=True,
+            steps=[
+                ScenarioStep(
+                    section="Location",
+                    instructions=["Enter ZIP code `77001`"],
+                )
+            ],
+            what_to_look_for=["Program appears in results"],
+            why_matters="Tests hourly income handling",
+            zip_code="77001",
+            county="Harris",
             household_size=1,
-            zip_code="60601",
-            county="Cook",
             household_assets=0,
-            agree_to_terms_of_service=True,
-            is_13_or_older=True,
-            members=[member],
+            members_data=[
+                {
+                    "relationship": "headOfHousehold",
+                    "birth_month": 6,
+                    "birth_year": 1990,
+                    "income_streams": [
+                        {
+                            "type": "wages",
+                            "amount": 15.50,
+                            "frequency": "hourly",
+                            "hours_worked": 35,
+                        }
+                    ],
+                    "insurance": {"none": True},
+                }
+            ],
         )
 
-        json_tc = JSONTestCase(
-            test_id="il_csfp_01",
+        stream = tc.members_data[0]["income_streams"][0]
+        assert stream["frequency"] == "hourly"
+        assert stream["hours_worked"] == 35
+
+
+class TestResearchStateJsonTestCases:
+    """Tests for json_test_cases field as list[dict]."""
+
+    def test_json_test_cases_accepts_list_of_dicts(self):
+        """Test that ResearchState.json_test_cases accepts list[dict]."""
+        state = ResearchState(
+            program_name="CSFP",
+            state_code="il",
             white_label="il",
-            program_name="il_csfp",
-            household=household,
-            expected_results=JSONTestCaseExpectedResults(
-                eligibility=True,
-                benefit_amount=600,
-            ),
+            source_urls=["https://example.com"],
+            json_test_cases=[
+                {
+                    "notes": "IL CSFP - Eligible elderly person",
+                    "household": {
+                        "white_label": "il",
+                        "zipcode": "60601",
+                        "county": "Cook",
+                        "agree_to_tos": True,
+                        "is_13_or_older": True,
+                        "household_members": [
+                            {
+                                "relationship": "headOfHousehold",
+                                "age": 72,
+                                "insurance": {"none": True},
+                            }
+                        ],
+                        "expenses": [],
+                    },
+                    "expected_results": {
+                        "program_name": "il_csfp",
+                        "eligible": True,
+                        "value": 50,
+                    },
+                }
+            ],
         )
 
-        assert json_tc.test_id == "il_csfp_01"
-        assert len(json_tc.household.members) == 1
+        assert len(state.json_test_cases) == 1
+        assert isinstance(state.json_test_cases[0], dict)
+        assert state.json_test_cases[0]["notes"] == "IL CSFP - Eligible elderly person"
+
+    def test_json_test_cases_default_empty(self):
+        """Test that ResearchState.json_test_cases defaults to empty list."""
+        state = ResearchState(
+            program_name="CSFP",
+            state_code="il",
+            white_label="il",
+            source_urls=["https://example.com"],
+        )
+
+        assert state.json_test_cases == []
 
 
 class TestResearchState:

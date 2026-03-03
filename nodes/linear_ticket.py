@@ -306,7 +306,7 @@ def save_json_test_cases(state: ResearchState) -> str:
     else:
         file_path = get_output_path(filename)
 
-    json_data = [tc.model_dump() for tc in state.json_test_cases]
+    json_data = list(state.json_test_cases)
 
     with open(file_path, "w") as f:
         json.dump(json_data, indent=2, fp=f)

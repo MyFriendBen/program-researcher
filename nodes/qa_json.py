@@ -10,7 +10,7 @@ from datetime import date
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..config import get_schema_path, settings
+from ..config import settings
 from ..prompts.qa_agent import QA_AGENT_PROMPTS
 from ..state import (
     IssueSeverity,
@@ -18,7 +18,7 @@ from ..state import (
     QAValidationResult,
     ResearchState,
 )
-from ..tools.schema_validator import validate_test_batch
+from ..tools.schema_validator import fetch_schema, validate_test_case
 from .qa_tests import format_test_cases
 
 
@@ -58,27 +58,31 @@ async def qa_validate_json_node(state: ResearchState) -> dict:
             "messages": messages,
         }
 
-    # First, validate against schema
-    json_data = [tc.model_dump() for tc in state.json_test_cases]
-    is_valid, schema_errors = validate_test_batch(json_data)
+    # First, validate each test case against the fetched schema
+    json_data = list(state.json_test_cases)
 
     issues = []
-    if not is_valid:
-        for error in schema_errors[:10]:  # Limit to first 10 errors
-            issues.append(
-                QAIssue(
-                    severity=IssueSeverity.CRITICAL,
-                    issue_type="schema_violation",
-                    description=error,
-                    location="json_test_cases",
-                    suggested_fix="Fix schema compliance issue",
+    schema_valid = True
+    for tc in json_data:
+        is_valid, schema_errors = validate_test_case(tc)
+        if not is_valid:
+            schema_valid = False
+            for error in schema_errors[:3]:  # Limit errors per test case
+                issues.append(
+                    QAIssue(
+                        severity=IssueSeverity.CRITICAL,
+                        issue_type="schema_violation",
+                        description=f"[{tc.get('notes', 'unknown')}] {error}",
+                        location="json_test_cases",
+                        suggested_fix="Fix schema compliance issue",
+                    )
                 )
-            )
 
-    # Load schema for LLM reference
-    schema_path = get_schema_path("pre_validation_schema.json")
-    with open(schema_path) as f:
-        schema = json.load(f)
+    # Fetch schema for LLM reference
+    try:
+        schema = fetch_schema()
+    except RuntimeError:
+        schema = {}
 
     # Format for LLM validation
     human_test_cases_text = format_test_cases(state.test_suite)
@@ -171,7 +175,7 @@ async def qa_validate_json_node(state: ResearchState) -> dict:
         messages.append(f"Error parsing QA response: {e}")
 
         # Return result based on schema validation alone
-        overall_status = "VALIDATED" if is_valid else "NEEDS_REVISION"
+        overall_status = "VALIDATED" if schema_valid else "NEEDS_REVISION"
 
         return {
             "json_qa_result": QAValidationResult(

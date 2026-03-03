@@ -248,110 +248,6 @@ class QAValidationResult(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# JSON Output Models (matches pre_validation_schema.json)
-# -----------------------------------------------------------------------------
-
-
-class JSONTestCaseMemberIncome(BaseModel):
-    """Income data for a household member in JSON format."""
-
-    wages: float | None = None
-    selfEmployment: float | None = None
-    unemployment: float | None = None
-    sSI: float | None = None
-    sSDisability: float | None = None
-    sSRetirement: float | None = None
-    sSSurvivor: float | None = None
-    sSDependent: float | None = None
-    pension: float | None = None
-    veteran: float | None = None
-    cashAssistance: float | None = None
-    childSupport: float | None = None
-    alimony: float | None = None
-    investment: float | None = None
-    rental: float | None = None
-    income_frequency: str = "monthly"
-    hours_per_week: float | None = None
-
-
-class JSONTestCaseMemberExpenses(BaseModel):
-    """Expense data for a household member in JSON format."""
-
-    rent: float | None = None
-    mortgage: float | None = None
-    childCare: float | None = None
-    childSupport: float | None = None
-    medical: float | None = None
-    heating: float | None = None
-    cooling: float | None = None
-
-
-class JSONTestCaseMemberInsurance(BaseModel):
-    """Insurance data for a household member in JSON format."""
-
-    none: bool = False
-    employer: bool = False
-    private: bool = False
-    medicaid: bool = False
-    medicare: bool = False
-    chp: bool = False
-    va: bool = False
-
-
-class JSONTestCaseMember(BaseModel):
-    """A household member in JSON test case format."""
-
-    relationship: str
-    birth_month: int
-    birth_year: int
-    age: int | None = None  # Calculated
-    gender: str | None = None
-    is_pregnant: bool | None = None
-    is_student: bool | None = None
-    is_disabled: bool | None = None
-    is_veteran: bool | None = None
-    is_blind: bool | None = None
-    unemployed: bool | None = None
-    has_income: bool | None = None
-    income: JSONTestCaseMemberIncome | None = None
-    expenses: JSONTestCaseMemberExpenses | None = None
-    insurance: JSONTestCaseMemberInsurance = Field(default_factory=JSONTestCaseMemberInsurance)
-
-
-class JSONTestCaseHousehold(BaseModel):
-    """Household data in JSON test case format."""
-
-    household_size: int
-    zip_code: str
-    county: str
-    household_assets: float = 0
-    agree_to_terms_of_service: bool = True
-    is_13_or_older: bool = True
-    housing_situation: str | None = None
-    has_benefits: str | None = None
-    current_benefits: dict[str, bool] | None = None
-    members: list[JSONTestCaseMember]
-
-
-class JSONTestCaseExpectedResults(BaseModel):
-    """Expected results in JSON test case format."""
-
-    eligibility: bool
-    benefit_amount: float | None = None
-    copay: float | None = None
-
-
-class JSONTestCase(BaseModel):
-    """A complete JSON test case matching pre_validation_schema.json."""
-
-    test_id: str
-    white_label: str
-    program_name: str
-    household: JSONTestCaseHousehold
-    expected_results: JSONTestCaseExpectedResults
-
-
-# -----------------------------------------------------------------------------
 # Program Configuration Model (for Django admin import)
 # -----------------------------------------------------------------------------
 
@@ -443,7 +339,7 @@ class ResearchState(BaseModel):
     test_case_iteration: int = Field(default=0)
 
     # ----- JSON Conversion -----
-    json_test_cases: list[JSONTestCase] = Field(default_factory=list)
+    json_test_cases: list[dict[str, Any]] = Field(default_factory=list)
 
     # ----- JSON QA Loop -----
     json_qa_result: QAValidationResult | None = Field(default=None)

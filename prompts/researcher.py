@@ -302,10 +302,9 @@ Return a JSON object:
           "birth_month": 3,
           "birth_year": 1953,
           "has_income": true,
-          "income": {{
-            "sSRetirement": 800,
-            "income_frequency": "monthly"
-          }},
+          "income_streams": [
+            {{"type": "sSRetirement", "amount": 800, "frequency": "monthly"}}
+          ],
           "insurance": {{"none": true}}
         }}
       ],
@@ -324,11 +323,13 @@ Return a JSON object:
 - Include exact numeric values from the eligibility criteria
 - Each scenario must have complete data for JSON conversion
 - Test boundary conditions precisely (e.g., if 130% FPL for 1 person is $1,580/month, test $1,579 and $1,581)
+- Use `income_streams` array format for income: `[{{"type": "wages", "amount": 1500, "frequency": "monthly"}}]`
+- For hourly income add `"hours_worked": <integer>` to the stream object
 """
 
 CONVERT_TO_JSON_PROMPT = """## Task: Convert Test Cases to JSON Schema Format
 
-Convert the human-readable test cases to the pre_validation_schema.json format.
+Convert the human-readable test cases to the benefits-api test_case_schema.json format.
 
 ### Program Information
 - **Program Name**: {program_name}
@@ -342,18 +343,32 @@ Convert the human-readable test cases to the pre_validation_schema.json format.
 
 ### Instructions
 
-Convert each test case to a JSON object matching the pre_validation_schema.json structure:
+Convert each test case to a JSON object matching the benefits-api test_case_schema.json structure.
+The new format has exactly 3 top-level keys: `notes`, `household`, `expected_results`.
 
-1. **test_id**: Format as "{white_label}_{program_name}_{scenario_number}" (e.g., "il_csfp_01")
-2. **white_label**: Use "{white_label}"
-3. **program_name**: Use the program's internal identifier
-4. **household**: Convert the test case data:
-   - Calculate `age` from birth_month and birth_year (current date: {current_date})
-   - Map income fields to correct property names (sSRetirement, wages, etc.)
-   - Include all required fields (agree_to_terms_of_service, is_13_or_older)
-5. **expected_results**:
-   - eligibility: boolean matching expected_eligible
-   - benefit_amount: from expected_amount (if applicable)
+1. **notes**: Human-readable string, e.g. "{white_label_upper} {program_name} - <scenario title>"
+2. **household**: Convert the test case data:
+   - `white_label`: Use "{white_label}" (moved from top level into household)
+   - `zipcode`: Use the zip code (note: NOT `zip_code` — use `zipcode`)
+   - `county`: Use the county name
+   - `agree_to_tos`: true (note: NOT `agree_to_terms_of_service`)
+   - `is_13_or_older`: true
+   - `household_members`: array of members (note: NOT `members`)
+   - `expenses`: array of household-level expenses (moved from per-member; use `[]` if none)
+   - For current_benefits: use individual `has_*` boolean fields (e.g., `"has_snap": true`)
+3. **household_members** (inside household):
+   - `relationship`: one of the valid enum values
+   - `age`: integer calculated from birth_year and birth_month (current date: {current_date})
+   - `insurance`: object with boolean fields
+   - `income_streams`: array of `{{"type": "<type>", "amount": <number>, "frequency": "<freq>"}}`
+     - For hourly income, also include `"hours_worked": <integer>`
+   - Status flags use new names: `pregnant` (not `is_pregnant`), `student` (not `is_student`),
+     `disabled` (not `is_disabled`), `veteran` (not `is_veteran`),
+     `visually_impaired` (not `is_blind`)
+4. **expected_results**:
+   - `program_name`: the program's name_abbreviated (e.g., "il_csfp", "tx_aca")
+   - `eligible`: boolean (not `eligibility`)
+   - `value`: number if applicable (not `benefit_amount`)
 
 ### Output Format
 
@@ -361,36 +376,36 @@ Return a JSON array:
 ```json
 [
   {{
-    "test_id": "il_csfp_01",
-    "white_label": "il",
-    "program_name": "il_csfp",
+    "notes": "IL CSFP - Eligible elderly person with low income",
     "household": {{
-      "household_size": 1,
-      "zip_code": "60601",
+      "white_label": "il",
+      "zipcode": "60601",
       "county": "Cook",
-      "household_assets": 0,
-      "agree_to_terms_of_service": true,
+      "agree_to_tos": true,
       "is_13_or_older": true,
-      "members": [
+      "household_size": 1,
+      "household_assets": 0,
+      "household_members": [
         {{
           "relationship": "headOfHousehold",
-          "birth_month": 3,
-          "birth_year": 1953,
           "age": 72,
+          "birth_year": 1953,
+          "birth_month": 3,
           "has_income": true,
-          "income": {{
-            "sSRetirement": 800,
-            "income_frequency": "monthly"
-          }},
+          "income_streams": [
+            {{"type": "sSRetirement", "amount": 800, "frequency": "monthly"}}
+          ],
           "insurance": {{
             "none": true
           }}
         }}
-      ]
+      ],
+      "expenses": []
     }},
     "expected_results": {{
-      "eligibility": true,
-      "benefit_amount": 600
+      "program_name": "il_csfp",
+      "eligible": true,
+      "value": 50
     }}
   }}
 ]
@@ -489,10 +504,9 @@ Return a JSON object for this SINGLE test case:
       "birth_month": 3,
       "birth_year": 1961,
       "has_income": true,
-      "income": {{
-        "sSRetirement": 800,
-        "income_frequency": "monthly"
-      }},
+      "income_streams": [
+        {{"type": "sSRetirement", "amount": 800, "frequency": "monthly"}}
+      ],
       "insurance": {{"none": true}}
     }}
   ],
