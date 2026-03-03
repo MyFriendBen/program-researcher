@@ -328,7 +328,7 @@ Return a JSON object:
 
 CONVERT_TO_JSON_PROMPT = """## Task: Convert Test Cases to JSON Schema Format
 
-Convert the human-readable test cases to the pre_validation_schema.json format.
+Convert the human-readable test cases to the benefits-api test_case_schema.json format.
 
 ### Program Information
 - **Program Name**: {program_name}
@@ -342,18 +342,21 @@ Convert the human-readable test cases to the pre_validation_schema.json format.
 
 ### Instructions
 
-Convert each test case to a JSON object matching the pre_validation_schema.json structure:
+Convert each test case to a JSON object matching the schema structure:
 
-1. **test_id**: Format as "{white_label}_{program_name}_{scenario_number}" (e.g., "il_csfp_01")
-2. **white_label**: Use "{white_label}"
-3. **program_name**: Use the program's internal identifier
-4. **household**: Convert the test case data:
+1. **notes**: Compose a human-readable description, e.g. "IL CSFP - Clearly eligible senior with SS income" (white_label uppercased, followed by program name and scenario title)
+2. **household**: Convert the test case data:
+   - `white_label`: Use "{white_label}"
    - Calculate `age` from birth_month and birth_year (current date: {current_date})
-   - Map income fields to correct property names (sSRetirement, wages, etc.)
-   - Include all required fields (agree_to_terms_of_service, is_13_or_older)
-5. **expected_results**:
-   - eligibility: boolean matching expected_eligible
-   - benefit_amount: from expected_amount (if applicable)
+   - Map income as `income_streams`: a list of objects with `type`, `amount`, and `frequency` (e.g., `{{"type": "sSRetirement", "amount": 800, "frequency": "monthly"}}`)
+   - Use `agree_to_tos` (not agree_to_terms_of_service)
+   - Use `zipcode` (not zip_code)
+   - Use `household_members` (not members)
+   - Include `expenses: []` at the household level
+3. **expected_results**:
+   - `program_name`: Use "{white_label}_{program_name}" (all lowercase)
+   - `eligible`: boolean matching expected_eligible
+   - `value`: from expected_amount (if applicable)
 
 ### Output Format
 
@@ -361,27 +364,26 @@ Return a JSON array:
 ```json
 [
   {{
-    "test_id": "il_csfp_01",
-    "white_label": "il",
-    "program_name": "il_csfp",
+    "notes": "IL CSFP - Clearly eligible senior with SS income",
     "household": {{
+      "white_label": "{white_label}",
       "household_size": 1,
-      "zip_code": "60601",
+      "zipcode": "60601",
       "county": "Cook",
       "household_assets": 0,
-      "agree_to_terms_of_service": true,
+      "agree_to_tos": true,
       "is_13_or_older": true,
-      "members": [
+      "expenses": [],
+      "household_members": [
         {{
           "relationship": "headOfHousehold",
           "birth_month": 3,
           "birth_year": 1953,
           "age": 72,
           "has_income": true,
-          "income": {{
-            "sSRetirement": 800,
-            "income_frequency": "monthly"
-          }},
+          "income_streams": [
+            {{"type": "sSRetirement", "amount": 800, "frequency": "monthly"}}
+          ],
           "insurance": {{
             "none": true
           }}
@@ -389,8 +391,9 @@ Return a JSON array:
       ]
     }},
     "expected_results": {{
-      "eligibility": true,
-      "benefit_amount": 600
+      "program_name": "{white_label}_{program_name}",
+      "eligible": true,
+      "value": 600
     }}
   }}
 ]

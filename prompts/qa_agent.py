@@ -207,7 +207,7 @@ Ensure the JSON conversion is accurate and matches the source test cases.
 
 For each JSON test case:
 
-1. **Schema Compliance**: Does it match pre_validation_schema.json?
+1. **Schema Compliance**: Does it match the benefits-api test_case_schema.json?
    - All required fields present
    - Correct data types
    - Valid enum values
@@ -239,7 +239,7 @@ Return a JSON object:
       "severity": "critical|major|minor",
       "issue_type": "schema_violation|data_mismatch|wrong_field_mapping|incorrect_age|missing_field",
       "description": "What the issue is",
-      "location": "Which test case (e.g., 'il_csfp_03.household.members[0].income')",
+      "location": "Which test case (e.g., 'il_csfp_03.household.household_members[0].income_streams')",
       "source_reference": "Human-readable says $800, JSON has $900",
       "suggested_fix": "Change income amount to 800",
       "resolved": false
