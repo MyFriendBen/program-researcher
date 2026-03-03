@@ -10,7 +10,7 @@ from datetime import date
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..config import get_schema_path, settings
+from ..config import settings
 from ..prompts.qa_agent import QA_AGENT_PROMPTS
 from ..state import (
     IssueSeverity,
@@ -18,7 +18,7 @@ from ..state import (
     QAValidationResult,
     ResearchState,
 )
-from ..tools.schema_validator import validate_test_batch
+from ..tools.schema_validator import fetch_schema, validate_test_case
 from .qa_tests import format_test_cases
 
 
@@ -58,27 +58,29 @@ async def qa_validate_json_node(state: ResearchState) -> dict:
             "messages": messages,
         }
 
-    # First, validate against schema
+    # Validate each test case against schema
     json_data = [tc.model_dump() for tc in state.json_test_cases]
-    is_valid, schema_errors = validate_test_batch(json_data)
-
     issues = []
-    if not is_valid:
-        for error in schema_errors[:10]:  # Limit to first 10 errors
-            issues.append(
-                QAIssue(
-                    severity=IssueSeverity.CRITICAL,
-                    issue_type="schema_violation",
-                    description=error,
-                    location="json_test_cases",
-                    suggested_fix="Fix schema compliance issue",
-                )
+    schema_errors_all: list[str] = []
+    for tc_dict in json_data:
+        is_valid, errors = validate_test_case(tc_dict)
+        if not is_valid:
+            schema_errors_all.extend(errors)
+
+    is_valid = len(schema_errors_all) == 0
+    for error in schema_errors_all[:10]:  # Limit to first 10 errors
+        issues.append(
+            QAIssue(
+                severity=IssueSeverity.CRITICAL,
+                issue_type="schema_violation",
+                description=error,
+                location="json_test_cases",
+                suggested_fix="Fix schema compliance issue",
             )
+        )
 
     # Load schema for LLM reference
-    schema_path = get_schema_path("pre_validation_schema.json")
-    with open(schema_path) as f:
-        schema = json.load(f)
+    schema = fetch_schema()
 
     # Format for LLM validation
     human_test_cases_text = format_test_cases(state.test_suite)
