@@ -248,42 +248,25 @@ class QAValidationResult(BaseModel):
 
 
 # -----------------------------------------------------------------------------
-# JSON Output Models (matches pre_validation_schema.json)
+# JSON Output Models (matches benefits-api test_case_schema.json)
 # -----------------------------------------------------------------------------
 
 
-class JSONTestCaseMemberIncome(BaseModel):
-    """Income data for a household member in JSON format."""
+class IncomeStream(BaseModel):
+    """A single income stream for a household member."""
 
-    wages: float | None = None
-    selfEmployment: float | None = None
-    unemployment: float | None = None
-    sSI: float | None = None
-    sSDisability: float | None = None
-    sSRetirement: float | None = None
-    sSSurvivor: float | None = None
-    sSDependent: float | None = None
-    pension: float | None = None
-    veteran: float | None = None
-    cashAssistance: float | None = None
-    childSupport: float | None = None
-    alimony: float | None = None
-    investment: float | None = None
-    rental: float | None = None
-    income_frequency: str = "monthly"
-    hours_per_week: float | None = None
+    type: str
+    amount: float
+    frequency: str
+    hours_worked: int | None = None
 
 
-class JSONTestCaseMemberExpenses(BaseModel):
-    """Expense data for a household member in JSON format."""
+class Expense(BaseModel):
+    """A screen-level expense."""
 
-    rent: float | None = None
-    mortgage: float | None = None
-    childCare: float | None = None
-    childSupport: float | None = None
-    medical: float | None = None
-    heating: float | None = None
-    cooling: float | None = None
+    type: str
+    amount: float
+    frequency: str
 
 
 class JSONTestCaseMemberInsurance(BaseModel):
@@ -306,47 +289,68 @@ class JSONTestCaseMember(BaseModel):
     birth_year: int
     age: int | None = None  # Calculated
     gender: str | None = None
-    is_pregnant: bool | None = None
-    is_student: bool | None = None
-    is_disabled: bool | None = None
-    is_veteran: bool | None = None
-    is_blind: bool | None = None
+    pregnant: bool | None = None
+    student: bool | None = None
+    disabled: bool | None = None
+    veteran: bool | None = None
+    visually_impaired: bool | None = None
     unemployed: bool | None = None
     has_income: bool | None = None
-    income: JSONTestCaseMemberIncome | None = None
-    expenses: JSONTestCaseMemberExpenses | None = None
+    income_streams: list[IncomeStream] = Field(default_factory=list)
     insurance: JSONTestCaseMemberInsurance = Field(default_factory=JSONTestCaseMemberInsurance)
 
 
 class JSONTestCaseHousehold(BaseModel):
     """Household data in JSON test case format."""
 
+    white_label: str
     household_size: int
-    zip_code: str
+    zipcode: str
     county: str
     household_assets: float = 0
-    agree_to_terms_of_service: bool = True
+    agree_to_tos: bool = True
     is_13_or_older: bool = True
     housing_situation: str | None = None
-    has_benefits: str | None = None
-    current_benefits: dict[str, bool] | None = None
-    members: list[JSONTestCaseMember]
+    household_members: list[JSONTestCaseMember]
+    expenses: list[Expense] = Field(default_factory=list)
+    # Current benefits (has_* fields)
+    has_tanf: bool | None = None
+    has_wic: bool | None = None
+    has_snap: bool | None = None
+    has_sunbucks: bool | None = None
+    has_lifeline: bool | None = None
+    has_acp: bool | None = None
+    has_eitc: bool | None = None
+    has_coeitc: bool | None = None
+    has_nslp: bool | None = None
+    has_ctc: bool | None = None
+    has_il_eitc: bool | None = None
+    has_il_ctc: bool | None = None
+    has_medicaid: bool | None = None
+    has_rtdlive: bool | None = None
+    has_cccap: bool | None = None
+    has_chp: bool | None = None
+    has_ssi: bool | None = None
+    has_ssdi: bool | None = None
+    has_aca: bool | None = None
+    has_section_8: bool | None = None
+    has_ma_homebridge: bool | None = None
+    has_ma_door_to_door: bool | None = None
+    has_csfp: bool | None = None
 
 
 class JSONTestCaseExpectedResults(BaseModel):
     """Expected results in JSON test case format."""
 
-    eligibility: bool
-    benefit_amount: float | None = None
-    copay: float | None = None
+    program_name: str
+    eligible: bool
+    value: float | None = None
 
 
 class JSONTestCase(BaseModel):
-    """A complete JSON test case matching pre_validation_schema.json."""
+    """A complete JSON test case matching benefits-api test_case_schema.json."""
 
-    test_id: str
-    white_label: str
-    program_name: str
+    notes: str
     household: JSONTestCaseHousehold
     expected_results: JSONTestCaseExpectedResults
 

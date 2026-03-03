@@ -6,9 +6,11 @@ import pytest
 
 from program_research_agent.state import (
     EligibilityCriterion,
+    Expense,
     FieldMapping,
     HumanTestCase,
     ImpactLevel,
+    IncomeStream,
     IssueSeverity,
     JSONTestCase,
     JSONTestCaseExpectedResults,
@@ -185,28 +187,49 @@ class TestTestCaseModels:
         )
 
         household = JSONTestCaseHousehold(
+            white_label="il",
             household_size=1,
-            zip_code="60601",
+            zipcode="60601",
             county="Cook",
             household_assets=0,
-            agree_to_terms_of_service=True,
+            agree_to_tos=True,
             is_13_or_older=True,
-            members=[member],
+            household_members=[member],
+            expenses=[],
         )
 
         json_tc = JSONTestCase(
-            test_id="il_csfp_01",
-            white_label="il",
-            program_name="il_csfp",
+            notes="IL il_csfp - Clearly eligible senior",
             household=household,
             expected_results=JSONTestCaseExpectedResults(
-                eligibility=True,
-                benefit_amount=600,
+                program_name="il_csfp",
+                eligible=True,
+                value=600,
             ),
         )
 
-        assert json_tc.test_id == "il_csfp_01"
-        assert len(json_tc.household.members) == 1
+        assert "il_csfp" in json_tc.notes.lower()
+        assert len(json_tc.household.household_members) == 1
+
+    def test_income_stream_creation(self):
+        """Test creating an IncomeStream model."""
+        stream = IncomeStream(type="sSRetirement", amount=800, frequency="monthly")
+        assert stream.type == "sSRetirement"
+        assert stream.amount == 800
+        assert stream.frequency == "monthly"
+        assert stream.hours_worked is None
+
+    def test_income_stream_hourly(self):
+        """Test IncomeStream with hourly frequency."""
+        stream = IncomeStream(type="wages", amount=15, frequency="hourly", hours_worked=40)
+        assert stream.hours_worked == 40
+
+    def test_expense_creation(self):
+        """Test creating an Expense model."""
+        expense = Expense(type="rent", amount=1200, frequency="monthly")
+        assert expense.type == "rent"
+        assert expense.amount == 1200
+        assert expense.frequency == "monthly"
 
 
 class TestResearchState:
