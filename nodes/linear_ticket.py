@@ -15,6 +15,7 @@ from ..state import (
     ResearchState,
     WorkflowStatus,
 )
+from ..tools.output_saver import sanitize_for_filename
 
 
 async def create_linear_ticket_node(state: ResearchState) -> dict:
@@ -296,7 +297,8 @@ def save_json_test_cases(state: ResearchState) -> str:
     """Save JSON test cases to ticket_content subdirectory."""
     from pathlib import Path
 
-    filename = f"{state.white_label}_{state.program_name}_test_cases.json"
+    safe_name = sanitize_for_filename(state.program_name)
+    filename = f"{state.white_label}_{safe_name}_test_cases.json"
 
     # Use ticket_content subdirectory within the timestamped output directory
     if state.output_dir:
@@ -318,7 +320,8 @@ def save_program_config(state: ResearchState) -> str:
     """Save program configuration to ticket_content subdirectory."""
     from pathlib import Path
 
-    filename = f"{state.white_label}_{state.program_name}_initial_config.json"
+    safe_name = sanitize_for_filename(state.program_name)
+    filename = f"{state.white_label}_{safe_name}_initial_config.json"
 
     # Use ticket_content subdirectory within the timestamped output directory
     if state.output_dir:
@@ -341,7 +344,8 @@ def save_ticket_content_locally(content: LinearTicketContent, state: ResearchSta
     """Save ticket content to a local markdown file in ticket_content subdirectory."""
     from pathlib import Path
 
-    filename = f"{state.white_label}_{state.program_name}_ticket.md"
+    safe_name = sanitize_for_filename(state.program_name)
+    filename = f"{state.white_label}_{safe_name}_ticket.md"
 
     # Use ticket_content subdirectory within the timestamped output directory
     if state.output_dir:

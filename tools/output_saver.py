@@ -14,6 +14,21 @@ from pydantic import BaseModel
 from ..config import settings
 
 
+def sanitize_for_filename(name: str) -> str:
+    """Sanitize a string for use in file/directory names.
+
+    Replaces characters that are invalid in file paths (like '/') with safe alternatives.
+    """
+    # Replace forward slash (and backslash) with a hyphen
+    sanitized = name.replace("/", "-").replace("\\", "-")
+    # Collapse multiple hyphens/spaces from the replacement
+    while "  " in sanitized:
+        sanitized = sanitized.replace("  ", " ")
+    while "--" in sanitized:
+        sanitized = sanitized.replace("--", "-")
+    return sanitized.strip(" -")
+
+
 def get_research_output_dir(white_label: str, program_name: str) -> Path:
     """
     Get the output directory for a specific research run.
@@ -22,7 +37,8 @@ def get_research_output_dir(white_label: str, program_name: str) -> Path:
     output/{white_label}_{program_name}_{timestamp}/
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = settings.output_dir / f"{white_label}_{program_name}_{timestamp}"
+    safe_name = sanitize_for_filename(program_name)
+    output_dir = settings.output_dir / f"{white_label}_{safe_name}_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
