@@ -5,6 +5,7 @@ Validates test cases against the benefits-api test_case_schema.json fetched from
 """
 
 import json
+import urllib.error
 import urllib.request
 from typing import Any
 
@@ -20,7 +21,7 @@ def fetch_schema() -> dict[str, Any]:
     """Fetch the JSON schema from settings.schema_url, caching per process."""
     url = settings.schema_url
     if url not in _schema_cache:
-        with urllib.request.urlopen(url) as response:
+        with urllib.request.urlopen(url, timeout=10) as response:
             _schema_cache[url] = json.loads(response.read().decode())
     return _schema_cache[url]
 

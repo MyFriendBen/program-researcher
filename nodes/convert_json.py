@@ -5,6 +5,7 @@ Convert human-readable test cases to benefits-api test_case_schema.json format.
 """
 
 import json
+import urllib.error
 from datetime import date
 
 from langchain_anthropic import ChatAnthropic
@@ -31,7 +32,7 @@ async def convert_to_json_node(state: ResearchState) -> dict:
     Convert human-readable test cases to JSON schema format.
 
     This node:
-    1. Reads the pre_validation_schema
+    1. Fetches the schema via `fetch_schema()` (HTTP, cached per process)
     2. Converts each test case to the schema format
     3. Validates against the schema
     4. Returns validated JSON test cases
@@ -50,7 +51,16 @@ async def convert_to_json_node(state: ResearchState) -> dict:
         }
 
     # Load the schema for reference
-    schema = fetch_schema()
+    try:
+        schema = fetch_schema()
+    except (urllib.error.URLError, Exception) as e:
+        messages.append(f"Failed to fetch schema: {e}")
+        return {
+            "json_test_cases": [],
+            "messages": messages,
+            "status": WorkflowStatus.FAILED,
+            "error_message": f"Failed to fetch schema: {e}",
+        }
 
     # Convert each test case
     json_test_cases = []
@@ -107,7 +117,9 @@ def convert_test_case(
         income_streams: list[IncomeStream] = []
         if member_data.get("income"):
             income_data = member_data["income"]
-            frequency = income_data.get("income_frequency", "monthly")
+            # NOTE: income_frequency is applied uniformly to all income streams for a member;
+        # the schema doesn't support per-stream frequencies, so this is a known limitation.
+        frequency = income_data.get("income_frequency", "monthly")
             income_type_keys = [
                 "wages", "selfEmployment", "sSI", "sSDisability", "sSRetirement",
                 "sSSurvivor", "sSDependent", "pension", "veteran", "cashAssistance",
