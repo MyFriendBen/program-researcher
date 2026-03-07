@@ -78,7 +78,7 @@ async def convert_to_json_node(state: ResearchState) -> dict:
     # Validate each test case
     valid_count = 0
     for json_tc in json_test_cases:
-        is_valid, errors = validate_test_case(json_tc.model_dump())
+        is_valid, errors = validate_test_case(json_tc.model_dump(exclude_none=True))
         if is_valid:
             valid_count += 1
         else:
@@ -90,6 +90,13 @@ async def convert_to_json_node(state: ResearchState) -> dict:
         "json_test_cases": json_test_cases,
         "messages": messages,
     }
+
+
+def _normalize_county(county: str, white_label: str) -> str:
+    """Strip 'County' suffix for TX/IL per schema requirements."""
+    if white_label in ("tx", "il") and county.lower().endswith(" county"):
+        return county[: -len(" county")].strip()
+    return county
 
 
 def convert_test_case(
@@ -176,7 +183,7 @@ def convert_test_case(
         white_label=white_label,
         household_size=tc.household_size,
         zipcode=tc.zip_code,
-        county=tc.county,
+        county=_normalize_county(tc.county, white_label),
         household_assets=tc.household_assets,
         agree_to_tos=True,
         is_13_or_older=True,

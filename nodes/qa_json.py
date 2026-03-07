@@ -59,7 +59,7 @@ async def qa_validate_json_node(state: ResearchState) -> dict:
         }
 
     # Validate each test case against schema
-    json_data = [tc.model_dump() for tc in state.json_test_cases]
+    json_data = [tc.model_dump(exclude_none=True) for tc in state.json_test_cases]
     issues = []
     schema_errors_all: list[str] = []
     for tc_dict in json_data:

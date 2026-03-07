@@ -510,6 +510,7 @@ Return a JSON object for this SINGLE test case:
 - Use realistic values based on current FPL and program thresholds
 - Ensure the scenario is DIFFERENT from previously generated ones
 - Make sure to test the specific aspect described in the category description
+- **County format**: For TX and IL, use county name WITHOUT "County" suffix (e.g., `"Travis"`, `"Collin"`, `"Cook"`). For CO and NC, INCLUDE "County" suffix (e.g., `"Denver County"`, `"Wake County"`). For MA, use city names (e.g., `"Boston"`).
 """
 
 # Test case categories with descriptions
