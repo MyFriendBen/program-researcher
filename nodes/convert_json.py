@@ -1,28 +1,30 @@
 """
 Node: Convert to JSON
 
-Convert human-readable test cases to pre_validation_schema.json format.
+Convert human-readable test cases to benefits-api test_case_schema.json format.
 """
 
 import json
+import urllib.error
 from datetime import date
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
 
-from ..config import get_schema_path, settings
+from ..config import settings
 from ..prompts.researcher import RESEARCHER_PROMPTS
 from ..state import (
+    JSONTestCaseExpense,
+    JSONTestCaseIncomeStream,
     JSONTestCase,
     JSONTestCaseExpectedResults,
     JSONTestCaseHousehold,
     JSONTestCaseMember,
-    JSONTestCaseMemberIncome,
     JSONTestCaseMemberInsurance,
     ResearchState,
     WorkflowStatus,
 )
-from ..tools.schema_validator import validate_test_case
+from ..tools.schema_validator import fetch_schema, validate_test_case
 
 
 async def convert_to_json_node(state: ResearchState) -> dict:
@@ -30,7 +32,7 @@ async def convert_to_json_node(state: ResearchState) -> dict:
     Convert human-readable test cases to JSON schema format.
 
     This node:
-    1. Reads the pre_validation_schema
+    1. Fetches the schema via `fetch_schema()` (HTTP, cached per process)
     2. Converts each test case to the schema format
     3. Validates against the schema
     4. Returns validated JSON test cases
@@ -49,9 +51,16 @@ async def convert_to_json_node(state: ResearchState) -> dict:
         }
 
     # Load the schema for reference
-    schema_path = get_schema_path("pre_validation_schema.json")
-    with open(schema_path) as f:
-        schema = json.load(f)
+    try:
+        schema = fetch_schema()
+    except (urllib.error.URLError, Exception) as e:
+        messages.append(f"Failed to fetch schema: {e}")
+        return {
+            "json_test_cases": [],
+            "messages": messages,
+            "status": WorkflowStatus.FAILED,
+            "error_message": f"Failed to fetch schema: {e}",
+        }
 
     # Convert each test case
     json_test_cases = []
@@ -59,7 +68,7 @@ async def convert_to_json_node(state: ResearchState) -> dict:
 
     for tc in state.test_suite.test_cases:
         try:
-            json_tc = convert_test_case(tc, state.white_label, state.program_name, current_date)
+            json_tc = convert_test_case(tc, state.white_label, state.program_name, current_date, schema)
             json_test_cases.append(json_tc)
         except Exception as e:
             messages.append(f"Error converting scenario {tc.scenario_number}: {e}")
@@ -69,11 +78,11 @@ async def convert_to_json_node(state: ResearchState) -> dict:
     # Validate each test case
     valid_count = 0
     for json_tc in json_test_cases:
-        is_valid, errors = validate_test_case(json_tc.model_dump())
+        is_valid, errors = validate_test_case(json_tc.model_dump(exclude_none=True))
         if is_valid:
             valid_count += 1
         else:
-            messages.append(f"Validation errors in {json_tc.test_id}: {errors[:2]}")
+            messages.append(f"Validation errors in {json_tc.notes}: {errors[:2]}")
 
     messages.append(f"Schema validation: {valid_count}/{len(json_test_cases)} valid")
 
@@ -83,16 +92,24 @@ async def convert_to_json_node(state: ResearchState) -> dict:
     }
 
 
+def _normalize_county(county: str, white_label: str) -> str:
+    """Strip 'County' suffix for TX/IL per schema requirements."""
+    if white_label in ("tx", "il") and county.lower().endswith(" county"):
+        return county[: -len(" county")].strip()
+    return county
+
+
 def convert_test_case(
     tc,
     white_label: str,
     program_name: str,
     current_date: date,
+    schema: dict,
 ) -> JSONTestCase:
     """Convert a single human test case to JSON format."""
 
-    # Generate test ID
-    test_id = f"{white_label}_{program_name}_{tc.scenario_number:02d}"
+    # Generate human-readable notes
+    notes = f"{white_label.upper()} {program_name} - {tc.title}"
 
     # Convert members
     members = []
@@ -104,28 +121,20 @@ def convert_test_case(
         if current_date.month < birth_month:
             age -= 1
 
-        # Build income object
-        income = None
+        # Build income_streams from flat income dict
+        income_streams: list[JSONTestCaseIncomeStream] = []
         if member_data.get("income"):
             income_data = member_data["income"]
-            income = JSONTestCaseMemberIncome(
-                wages=income_data.get("wages"),
-                selfEmployment=income_data.get("selfEmployment"),
-                sSI=income_data.get("sSI"),
-                sSDisability=income_data.get("sSDisability"),
-                sSRetirement=income_data.get("sSRetirement"),
-                sSSurvivor=income_data.get("sSSurvivor"),
-                sSDependent=income_data.get("sSDependent"),
-                pension=income_data.get("pension"),
-                veteran=income_data.get("veteran"),
-                cashAssistance=income_data.get("cashAssistance"),
-                childSupport=income_data.get("childSupport"),
-                alimony=income_data.get("alimony"),
-                investment=income_data.get("investment"),
-                rental=income_data.get("rental"),
-                income_frequency=income_data.get("income_frequency", "monthly"),
-                hours_per_week=income_data.get("hours_per_week"),
-            )
+            # NOTE: income_frequency is applied uniformly to all income streams for a member;
+            # the schema doesn't support per-stream frequencies, so this is a known limitation.
+            frequency = income_data.get("income_frequency", "monthly")
+            income_type_keys = schema["definitions"]["incomeStream"]["properties"]["type"]["enum"]
+            for income_type in income_type_keys:
+                amount = income_data.get(income_type)
+                if amount is not None:
+                    income_streams.append(
+                        JSONTestCaseIncomeStream(type=income_type, amount=float(amount), frequency=frequency)
+                    )
 
         # Build insurance object
         insurance_data = member_data.get("insurance", {})
@@ -145,41 +154,53 @@ def convert_test_case(
             birth_year=birth_year,
             age=age,
             gender=member_data.get("gender"),
-            is_pregnant=member_data.get("is_pregnant"),
-            is_student=member_data.get("is_student"),
-            is_disabled=member_data.get("is_disabled"),
-            is_veteran=member_data.get("is_veteran"),
-            is_blind=member_data.get("is_blind"),
+            pregnant=member_data.get("is_pregnant"),
+            student=member_data.get("is_student"),
+            disabled=member_data.get("is_disabled"),
+            veteran=member_data.get("is_veteran"),
+            visually_impaired=member_data.get("is_blind"),
             unemployed=member_data.get("unemployed"),
             has_income=member_data.get("has_income"),
-            income=income,
+            income_streams=income_streams,
             insurance=insurance,
         )
         members.append(member)
 
+    # Build screen-level expenses (moved from per-member)
+    expenses: list[JSONTestCaseExpense] = []
+    for member_data in tc.members_data:
+        for exp in member_data.get("expenses", []):
+            expenses.append(
+                JSONTestCaseExpense(
+                    type=exp.get("type", ""),
+                    amount=float(exp.get("amount", 0)),
+                    frequency=exp.get("frequency", "monthly"),
+                )
+            )
+
     # Build household
     household = JSONTestCaseHousehold(
+        white_label=white_label,
         household_size=tc.household_size,
-        zip_code=tc.zip_code,
-        county=tc.county,
+        zipcode=tc.zip_code,
+        county=_normalize_county(tc.county, white_label),
         household_assets=tc.household_assets,
-        agree_to_terms_of_service=True,
+        agree_to_tos=True,
         is_13_or_older=True,
         housing_situation="rent",  # Default to rent for test cases
-        current_benefits=tc.current_benefits if tc.current_benefits else None,
-        members=members,
+        household_members=members,
+        expenses=expenses,
     )
 
     # Build expected results
     expected_results = JSONTestCaseExpectedResults(
-        eligibility=tc.expected_eligible,
-        benefit_amount=tc.expected_amount,
+        program_name=f"{white_label}_{program_name}".lower(),
+        eligible=tc.expected_eligible,
+        value=tc.expected_amount,
     )
 
     return JSONTestCase(
-        test_id=test_id,
-        white_label=white_label,
-        program_name=f"{white_label}_{program_name}".lower(),
+        notes=notes,
         household=household,
         expected_results=expected_results,
     )

@@ -10,7 +10,7 @@ Usage:
         --source-url "https://example.com/csfp"
 """
 
-from .state import (
+from program_research_agent.state import (
     EligibilityCriterion,
     FieldMapping,
     HumanTestCase,

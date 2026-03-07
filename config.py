@@ -4,7 +4,6 @@ Configuration for the Program Research Agent.
 Loads settings from environment variables and provides defaults.
 """
 
-import os
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -73,9 +72,9 @@ class Settings(BaseSettings):
         default=Path(__file__).parent / "output",
         description="Directory for output files",
     )
-    schemas_dir: Path = Field(
-        default=Path(__file__).parent.parent / "mfb_pre_validation_json_schemas",
-        description="Directory containing JSON schemas",
+    schema_url: str = Field(
+        default="https://raw.githubusercontent.com/MyFriendBen/benefits-api/main/validations/management/commands/import_validations/test_case_schema.json",
+        description="URL to fetch the JSON test case schema from",
     )
 
     # ----- Backend Paths (for reading screener fields) -----
@@ -108,11 +107,6 @@ class Settings(BaseSettings):
 settings = Settings()
 
 
-def get_schema_path(schema_name: str) -> Path:
-    """Get the full path to a JSON schema file."""
-    return settings.schemas_dir / schema_name
-
-
 def get_output_path(filename: str) -> Path:
     """Get the full path to an output file, creating the directory if needed."""
     settings.output_dir.mkdir(parents=True, exist_ok=True)
@@ -128,8 +122,5 @@ def validate_settings() -> list[str]:
 
     if not settings.backend_models_path.exists():
         errors.append(f"Backend models not found at {settings.backend_models_path}")
-
-    if not settings.schemas_dir.exists():
-        errors.append(f"Schemas directory not found at {settings.schemas_dir}")
 
     return errors

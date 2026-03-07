@@ -33,7 +33,7 @@ This tool automates the research phase of adding new benefit programs to the MyF
 - **QA Agent**: Adversarial reviewer that validates research accuracy and test coverage
 - **Iterative Loops**: QA issues trigger fixes until quality threshold met (max 3 iterations)
 - **Program Config Generation**: Auto-generates Django admin import configuration
-- **JSON Output**: Test cases formatted for the pre-validation system
+- **JSON Output**: Test cases formatted for the benefits-api test_case_schema.json
 - **Linear Integration**: Creates implementation tickets with acceptance criteria (optional)
 
 ## Installation
@@ -76,6 +76,12 @@ Set your Anthropic API key as an environment variable:
 
 ```bash
 export RESEARCH_AGENT_ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Optional: Override the schema URL (defaults to the GitHub raw URL for benefits-api):
+
+```bash
+export RESEARCH_AGENT_SCHEMA_URL=https://raw.githubusercontent.com/MyFriendBen/benefits-api/main/validations/management/commands/import_validations/test_case_schema.json
 ```
 
 Optional: For Linear ticket creation, also set:
@@ -166,7 +172,7 @@ The tool produces outputs at each step and saves them to timestamped directories
 3. **Field Mapping**: Eligibility criteria mapped to screener fields, with data gaps identified
 4. **QA Results**: Validation results at each QA step (with iteration numbers)
 5. **Human Test Cases**: 10-15 scenarios for manual QA testing
-6. **JSON Test Cases**: Test data in `pre_validation_schema.json` format
+6. **JSON Test Cases**: Test data in benefits-api `test_case_schema.json` format
 7. **Program Config**: Django admin import configuration (ready to use)
 8. **Linear Ticket**: Implementation ticket with acceptance criteria (if Linear configured)
 9. **Workflow Log**: Complete execution log
@@ -289,7 +295,7 @@ For typical research (1-2 PDFs): adds ~$0.04 per program run.
 - Checks expected outcomes
 
 ### Step 7: Convert to JSON
-- Transforms to `pre_validation_schema.json` format
+- Transforms to benefits-api `test_case_schema.json` format (fetched from GitHub)
 - Validates against schema
 - Calculates ages from birth dates
 
@@ -314,8 +320,11 @@ For typical research (1-2 PDFs): adds ~$0.04 per program run.
 
 ### Running Tests
 
+Tests must be run from the **parent directory** (e.g., `mfb/`), not from inside `program-researcher/`. This is required because `pyproject.toml` sets `where = [".."]`, so Python resolves the `program_research_agent` package relative to the parent.
+
 ```bash
-pytest tests/
+# From mfb/ (parent directory)
+python -m pytest program-researcher/tests/
 ```
 
 ### Code Quality

@@ -1,80 +1,47 @@
 """
 JSON Schema validation tools.
 
-Validates test cases against the pre_validation_schema.json.
+Validates test cases against the benefits-api test_case_schema.json fetched from GitHub.
 """
 
 import json
-from pathlib import Path
+import urllib.error
+import urllib.request
 from typing import Any
-from urllib.parse import urljoin
 
-from jsonschema import Draft7Validator, RefResolver, ValidationError, validate
+from jsonschema import Draft7Validator
 
-from ..config import get_schema_path, settings
+from ..config import settings
 
-
-def load_schema(schema_name: str = "pre_validation_schema.json") -> dict[str, Any]:
-    """Load a JSON schema from the schemas directory."""
-    schema_path = get_schema_path(schema_name)
-    if not schema_path.exists():
-        raise FileNotFoundError(f"Schema not found: {schema_path}")
-
-    with open(schema_path) as f:
-        return json.load(f)
+# Module-level cache: fetched once per process
+_schema_cache: dict[str, Any] = {}
 
 
-def get_schema_resolver() -> RefResolver:
-    """
-    Create a RefResolver that can resolve $ref references in schemas.
-
-    This allows the batch schema to reference the main schema.
-    """
-    # Load the main schema for the resolver's store
-    main_schema = load_schema("pre_validation_schema.json")
-
-    # Create a resolver with the schemas directory as the base URI
-    schema_dir = settings.schemas_dir.resolve()
-    base_uri = f"file://{schema_dir}/"
-
-    # Build a schema store for local resolution
-    store = {
-        base_uri + "pre_validation_schema.json": main_schema,
-        "./pre_validation_schema.json": main_schema,
-        "pre_validation_schema.json": main_schema,
-    }
-
-    return RefResolver(base_uri, main_schema, store=store)
+def fetch_schema() -> dict[str, Any]:
+    """Fetch the JSON schema from settings.schema_url, caching per process."""
+    url = settings.schema_url
+    if url not in _schema_cache:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            _schema_cache[url] = json.loads(response.read().decode())
+    return _schema_cache[url]
 
 
 def validate_against_schema(
-    data: dict[str, Any] | list[dict[str, Any]],
-    schema_name: str = "pre_validation_schema.json",
+    data: dict[str, Any],
 ) -> tuple[bool, list[str]]:
     """
-    Validate data against a JSON schema.
+    Validate a test case dict against the fetched JSON schema.
 
     Args:
-        data: The data to validate (single test case or batch)
-        schema_name: Name of the schema file
+        data: The test case dict to validate
 
     Returns:
         Tuple of (is_valid, list of error messages)
     """
     try:
-        # Determine which schema to use based on data type
-        if isinstance(data, list):
-            schema = load_schema("pre_validation_batch_schema.json")
-        else:
-            schema = load_schema(schema_name)
+        schema = fetch_schema()
+        validator = Draft7Validator(schema)
 
-        # Create resolver for $ref handling
-        resolver = get_schema_resolver()
-
-        # Create validator with resolver
-        validator = Draft7Validator(schema, resolver=resolver)
-
-        # Collect all validation errors
         errors = []
         for error in validator.iter_errors(data):
             path = " -> ".join(str(p) for p in error.absolute_path) or "root"
@@ -84,8 +51,8 @@ def validate_against_schema(
             return False, errors
         return True, []
 
-    except FileNotFoundError as e:
-        return False, [str(e)]
+    except urllib.error.URLError as e:
+        return False, [f"Failed to fetch schema: {e}"]
 
     except json.JSONDecodeError as e:
         return False, [f"Invalid JSON in schema: {e}"]
@@ -96,22 +63,12 @@ def validate_against_schema(
 
 def validate_test_case(test_case: dict[str, Any]) -> tuple[bool, list[str]]:
     """
-    Validate a single test case against the pre_validation_schema.
+    Validate a single test case against the benefits-api schema.
 
     Returns:
         Tuple of (is_valid, list of error messages)
     """
-    return validate_against_schema(test_case, "pre_validation_schema.json")
-
-
-def validate_test_batch(test_cases: list[dict[str, Any]]) -> tuple[bool, list[str]]:
-    """
-    Validate a batch of test cases against the pre_validation_batch_schema.
-
-    Returns:
-        Tuple of (is_valid, list of error messages)
-    """
-    return validate_against_schema(test_cases, "pre_validation_batch_schema.json")
+    return validate_against_schema(test_case)
 
 
 def check_required_fields(test_case: dict[str, Any]) -> list[str]:
@@ -123,36 +80,28 @@ def check_required_fields(test_case: dict[str, Any]) -> list[str]:
     missing = []
 
     # Top-level required
-    for field in ["test_id", "white_label", "program_name", "household", "expected_results"]:
+    for field in ["notes", "household", "expected_results"]:
         if field not in test_case:
             missing.append(field)
 
     # Household required
     if "household" in test_case:
         household = test_case["household"]
-        for field in [
-            "household_size",
-            "zip_code",
-            "county",
-            "agree_to_terms_of_service",
-            "is_13_or_older",
-            "household_assets",
-            "members",
-        ]:
+        for field in ["household_members", "zipcode", "agree_to_tos"]:
             if field not in household:
                 missing.append(f"household.{field}")
 
         # Member required
-        if "members" in household:
-            for i, member in enumerate(household["members"]):
-                for field in ["relationship", "birth_month", "birth_year", "insurance"]:
+        if "household_members" in household:
+            for i, member in enumerate(household["household_members"]):
+                for field in ["relationship", "age", "insurance"]:
                     if field not in member:
-                        missing.append(f"household.members[{i}].{field}")
+                        missing.append(f"household.household_members[{i}].{field}")
 
     # Expected results required
     if "expected_results" in test_case:
-        if "eligibility" not in test_case["expected_results"]:
-            missing.append("expected_results.eligibility")
+        if "eligible" not in test_case["expected_results"]:
+            missing.append("expected_results.eligible")
 
     return missing
 
@@ -165,7 +114,6 @@ def validate_enum_values(test_case: dict[str, Any]) -> list[str]:
     """
     errors = []
 
-    # Valid relationship values
     valid_relationships = [
         "headOfHousehold",
         "child",
@@ -187,8 +135,6 @@ def validate_enum_values(test_case: dict[str, Any]) -> list[str]:
 
     valid_housing = ["rent", "own", "staying_with_friends", "hotel", "shelter", "other"]
 
-    valid_income_frequency = ["weekly", "biweekly", "semimonthly", "monthly", "yearly", "hourly"]
-
     if "household" in test_case:
         household = test_case["household"]
 
@@ -201,23 +147,14 @@ def validate_enum_values(test_case: dict[str, Any]) -> list[str]:
                 )
 
         # Members
-        if "members" in household:
-            for i, member in enumerate(household["members"]):
+        if "household_members" in household:
+            for i, member in enumerate(household["household_members"]):
                 if "relationship" in member:
                     if member["relationship"] not in valid_relationships:
                         errors.append(
-                            f"household.members[{i}].relationship: Invalid value "
+                            f"household.household_members[{i}].relationship: Invalid value "
                             f"'{member['relationship']}'. Must be one of: {valid_relationships}"
                         )
-
-                if "income" in member and member["income"]:
-                    if "income_frequency" in member["income"]:
-                        freq = member["income"]["income_frequency"]
-                        if freq not in valid_income_frequency:
-                            errors.append(
-                                f"household.members[{i}].income.income_frequency: Invalid value "
-                                f"'{freq}'. Must be one of: {valid_income_frequency}"
-                            )
 
     return errors
 
@@ -229,7 +166,7 @@ def format_validation_report(
     enum_errors: list[str],
 ) -> str:
     """Format a validation report for a test case."""
-    lines = [f"## Validation Report: {test_case.get('test_id', 'unknown')}\n"]
+    lines = [f"## Validation Report: {test_case.get('notes', 'unknown')}\n"]
 
     if not schema_errors and not missing_fields and not enum_errors:
         lines.append("✅ **VALID** - All checks passed\n")
