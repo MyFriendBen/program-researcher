@@ -352,7 +352,7 @@ Convert each test case to a JSON object matching the schema structure:
    - Use `agree_to_tos` (not agree_to_terms_of_service)
    - Use `zipcode` (not zip_code)
    - Use `household_members` (not members)
-   - Include `expenses: []` at the household level
+   - Include an `expenses` key at the household level (use `[]` if no expenses apply)
 3. **expected_results**:
    - `program_name`: Use "{white_label}_{program_name}" (all lowercase)
    - `eligible`: boolean matching expected_eligible

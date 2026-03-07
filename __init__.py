@@ -10,25 +10,18 @@ Usage:
         --source-url "https://example.com/csfp"
 """
 
-try:
-    from .state import (
-        EligibilityCriterion,
-        FieldMapping,
-        HumanTestCase,
-        JSONTestCase,
-        LinkCatalog,
-        LinkCatalogEntry,
-        QAIssue,
-        QAValidationResult,
-        ResearchState,
-        ScenarioSuite,
-    )
-except ImportError:
-    # Happens when pytest imports this file directly by path (the directory
-    # name "program-researcher" has a hyphen so pytest can't resolve it as a
-    # package). Tests import from program_research_agent.state directly, so
-    # these convenience re-exports are not needed at test time.
-    pass
+from program_research_agent.state import (
+    EligibilityCriterion,
+    FieldMapping,
+    HumanTestCase,
+    JSONTestCase,
+    LinkCatalog,
+    LinkCatalogEntry,
+    QAIssue,
+    QAValidationResult,
+    ResearchState,
+    ScenarioSuite,
+)
 
 __version__ = "0.1.0"
 

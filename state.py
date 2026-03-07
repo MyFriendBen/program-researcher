@@ -252,7 +252,7 @@ class QAValidationResult(BaseModel):
 # -----------------------------------------------------------------------------
 
 
-class IncomeStream(BaseModel):
+class JSONTestCaseIncomeStream(BaseModel):
     """A single income stream for a household member."""
 
     type: str
@@ -261,7 +261,7 @@ class IncomeStream(BaseModel):
     hours_worked: int | None = None
 
 
-class Expense(BaseModel):
+class JSONTestCaseExpense(BaseModel):
     """A screen-level expense."""
 
     type: str
@@ -296,7 +296,7 @@ class JSONTestCaseMember(BaseModel):
     visually_impaired: bool | None = None
     unemployed: bool | None = None
     has_income: bool | None = None
-    income_streams: list[IncomeStream] = Field(default_factory=list)
+    income_streams: list[JSONTestCaseIncomeStream] = Field(default_factory=list)
     insurance: JSONTestCaseMemberInsurance = Field(default_factory=JSONTestCaseMemberInsurance)
 
 
@@ -312,7 +312,7 @@ class JSONTestCaseHousehold(BaseModel):
     is_13_or_older: bool = True
     housing_situation: str | None = None
     household_members: list[JSONTestCaseMember]
-    expenses: list[Expense] = Field(default_factory=list)
+    expenses: list[JSONTestCaseExpense] = Field(default_factory=list)
     # Current benefits (has_* fields)
     has_tanf: bool | None = None
     has_wic: bool | None = None

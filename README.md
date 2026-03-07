@@ -320,8 +320,11 @@ For typical research (1-2 PDFs): adds ~$0.04 per program run.
 
 ### Running Tests
 
+Tests must be run from the **parent directory** (e.g., `mfb/`), not from inside `program-researcher/`. This is required because `pyproject.toml` sets `where = [".."]`, so Python resolves the `program_research_agent` package relative to the parent.
+
 ```bash
-pytest tests/
+# From mfb/ (parent directory)
+python -m pytest program-researcher/tests/
 ```
 
 ### Code Quality

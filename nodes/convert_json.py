@@ -14,8 +14,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ..config import settings
 from ..prompts.researcher import RESEARCHER_PROMPTS
 from ..state import (
-    Expense,
-    IncomeStream,
+    JSONTestCaseExpense,
+    JSONTestCaseIncomeStream,
     JSONTestCase,
     JSONTestCaseExpectedResults,
     JSONTestCaseHousehold,
@@ -68,7 +68,7 @@ async def convert_to_json_node(state: ResearchState) -> dict:
 
     for tc in state.test_suite.test_cases:
         try:
-            json_tc = convert_test_case(tc, state.white_label, state.program_name, current_date)
+            json_tc = convert_test_case(tc, state.white_label, state.program_name, current_date, schema)
             json_test_cases.append(json_tc)
         except Exception as e:
             messages.append(f"Error converting scenario {tc.scenario_number}: {e}")
@@ -97,6 +97,7 @@ def convert_test_case(
     white_label: str,
     program_name: str,
     current_date: date,
+    schema: dict,
 ) -> JSONTestCase:
     """Convert a single human test case to JSON format."""
 
@@ -114,22 +115,18 @@ def convert_test_case(
             age -= 1
 
         # Build income_streams from flat income dict
-        income_streams: list[IncomeStream] = []
+        income_streams: list[JSONTestCaseIncomeStream] = []
         if member_data.get("income"):
             income_data = member_data["income"]
             # NOTE: income_frequency is applied uniformly to all income streams for a member;
-        # the schema doesn't support per-stream frequencies, so this is a known limitation.
-        frequency = income_data.get("income_frequency", "monthly")
-            income_type_keys = [
-                "wages", "selfEmployment", "sSI", "sSDisability", "sSRetirement",
-                "sSSurvivor", "sSDependent", "pension", "veteran", "cashAssistance",
-                "childSupport", "alimony", "investment", "rental",
-            ]
+            # the schema doesn't support per-stream frequencies, so this is a known limitation.
+            frequency = income_data.get("income_frequency", "monthly")
+            income_type_keys = schema["definitions"]["incomeStream"]["properties"]["type"]["enum"]
             for income_type in income_type_keys:
                 amount = income_data.get(income_type)
                 if amount is not None:
                     income_streams.append(
-                        IncomeStream(type=income_type, amount=float(amount), frequency=frequency)
+                        JSONTestCaseIncomeStream(type=income_type, amount=float(amount), frequency=frequency)
                     )
 
         # Build insurance object
@@ -163,11 +160,11 @@ def convert_test_case(
         members.append(member)
 
     # Build screen-level expenses (moved from per-member)
-    expenses: list[Expense] = []
+    expenses: list[JSONTestCaseExpense] = []
     for member_data in tc.members_data:
         for exp in member_data.get("expenses", []):
             expenses.append(
-                Expense(
+                JSONTestCaseExpense(
                     type=exp.get("type", ""),
                     amount=float(exp.get("amount", 0)),
                     frequency=exp.get("frequency", "monthly"),

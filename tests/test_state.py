@@ -6,11 +6,11 @@ import pytest
 
 from program_research_agent.state import (
     EligibilityCriterion,
-    Expense,
     FieldMapping,
     HumanTestCase,
     ImpactLevel,
-    IncomeStream,
+    JSONTestCaseExpense,
+    JSONTestCaseIncomeStream,
     IssueSeverity,
     JSONTestCase,
     JSONTestCaseExpectedResults,
@@ -212,21 +212,21 @@ class TestTestCaseModels:
         assert len(json_tc.household.household_members) == 1
 
     def test_income_stream_creation(self):
-        """Test creating an IncomeStream model."""
-        stream = IncomeStream(type="sSRetirement", amount=800, frequency="monthly")
+        """Test creating an JSONTestCaseIncomeStream model."""
+        stream = JSONTestCaseIncomeStream(type="sSRetirement", amount=800, frequency="monthly")
         assert stream.type == "sSRetirement"
         assert stream.amount == 800
         assert stream.frequency == "monthly"
         assert stream.hours_worked is None
 
     def test_income_stream_hourly(self):
-        """Test IncomeStream with hourly frequency."""
-        stream = IncomeStream(type="wages", amount=15, frequency="hourly", hours_worked=40)
+        """Test JSONTestCaseIncomeStream with hourly frequency."""
+        stream = JSONTestCaseIncomeStream(type="wages", amount=15, frequency="hourly", hours_worked=40)
         assert stream.hours_worked == 40
 
     def test_expense_creation(self):
-        """Test creating an Expense model."""
-        expense = Expense(type="rent", amount=1200, frequency="monthly")
+        """Test creating an JSONTestCaseExpense model."""
+        expense = JSONTestCaseExpense(type="rent", amount=1200, frequency="monthly")
         assert expense.type == "rent"
         assert expense.amount == 1200
         assert expense.frequency == "monthly"

@@ -42,9 +42,6 @@ research-program = "program_research_agent.cli:research_program"
 where = [".."]
 include = ["program_research_agent*"]
 
-[tool.pytest.ini_options]
-pythonpath = [".."]
-
 [tool.ruff]
 line-length = 100
 target-version = "py311"
