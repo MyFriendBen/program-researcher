@@ -154,7 +154,7 @@ def build_research_context(state: ResearchState) -> str:
         context_parts.append("**Additional Resources Found:**")
         for link in state.link_catalog.links[:30]:
             # Include official sources, application pages, and policy docs
-            if link.category in ["Official Program", "Application", "Policy"]:
+            if link.category in ["Official Program", "Application", "Policy", "Navigator"]:
                 context_parts.append(f"- [{link.title}]({link.url})")
                 if link.content_summary:
                     context_parts.append(f"  Summary: {link.content_summary}")

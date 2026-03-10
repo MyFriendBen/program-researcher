@@ -576,7 +576,7 @@ Generate a JSON configuration matching this format:
     "external_name": "<whitelabel>_<category>"
   }},
   "program": {{
-    "name_abbreviated": "{white_label}_{program_name}",
+    "name_abbreviated": "{white_label}_<program_name_snake_case>",
     "year": "2025",
     "legal_status_required": ["citizen", "refugee", ...],
     "name": "Full Program Name",
@@ -619,6 +619,12 @@ Generate a JSON configuration matching this format:
   - Childcare → "{white_label}_childcare"
   - Cash assistance → "{white_label}_cash"
 
+**program.name_abbreviated**:
+- Format: `{white_label}_{program_name}` converted to snake_case
+- Must be all lowercase with underscores only (no spaces, dashes, or special characters)
+- Example: `il_csfp`, `co_snap`, `tx_medicaid`
+- Derive program name abbreviation from the official acronym (e.g., "SNAP" → "snap", "CSFP" → "csfp")
+
 **program.legal_status_required**:
 - Extract from eligibility criteria
 - Common values: ["citizen", "gc_5plus", "gc_5less", "refugee", "otherWithWorkPermission", "non_citizen"]
@@ -631,20 +637,35 @@ Generate a JSON configuration matching this format:
 - Extract from program overview or source titles
 
 **program.description**:
-- Write 2 concise paragraphs (100-150 words total) at 8th grade reading level:
-  1. **What it provides**: Clear, simple explanation of the benefit (e.g., "monthly food packages", "help paying for healthcare")
-  2. **Who can get it**: Basic eligibility in plain language (e.g., "seniors age 60 or older with low income")
-- Keep sentences short and direct
-- Avoid jargon and technical terms
-- Include specific benefit amounts if available (e.g., "$60/month in groceries")
-- Mention any important rules briefly (e.g., "work requirements may apply")
-- Use information from eligibility criteria but simplify for general audience
-- Think: someone skimming quickly needs to understand the basics
+- **REQUIRED: 8th grade reading level or below** (Flesch-Kincaid Grade Level ≤ 8)
+- Write 2 short paragraphs (100-150 words total)
+- **Max sentence length: 20 words. If a sentence is longer, split it.**
+- Use common everyday words. Replace technical terms:
+  - "federal poverty level" → "poverty line"
+  - "automatically eligible" → "qualify automatically"
+  - "experiencing homelessness" → "without a stable home"
+  - "early childhood education and development services" → "preschool and learning programs"
+- Spell out acronyms on first use: "SNAP (food stamps)", "TANF (cash help)", "SSI (disability benefits)"
+- Paragraph 1: What the program provides (specific benefit, e.g., "free preschool", "$60/month in groceries")
+- Paragraph 2: Who can get it (plain-language eligibility)
+
+**GOOD example (8th grade)**:
+"Head Start is a free program for young children ages 3 to 5. It offers preschool classes, meals, and health checkups. Families pay nothing to join.
+
+Families with low income can apply. Children who get SNAP (food stamps) or TANF (cash help) qualify right away. Children without a stable home also qualify."
+
+**BAD example (too complex — do not write like this)**:
+"Head Start provides free early childhood education and development services for children ages 3 to 5 who are not yet in kindergarten. Children in foster care, experiencing homelessness, or from families receiving TANF, SSI, or SNAP benefits are automatically eligible regardless of income."
 
 **program.description_short**:
-- One-line description (5-10 words)
+- **REQUIRED: 8th grade reading level or below**
+- One-line description (5-10 words), plain language
 - Extract key benefit from description
 - Example: "Monthly food packages for eligible seniors"
+
+**program.website_description**:
+- **REQUIRED: 8th grade reading level or below**
+- Short description for website display, plain language
 
 **program.learn_more_link**:
 - Use the primary official source URL (usually .gov domain)
@@ -698,8 +719,25 @@ Generate a JSON configuration matching this format:
 - Add program-specific documents if mentioned in sources
 
 **navigators**:
-- Leave as empty array []
-- Human will add local contact information
+- Research and populate from "Navigator" category links found in the link catalog
+- Search official program pages for local assistance organizations, community action agencies, or application assistance contacts
+- Each navigator object should follow this structure:
+  ```json
+  {{
+    "external_name": "{white_label}_navigator_name",
+    "name": "Organization Name",
+    "phone": "555-555-5555",
+    "email": "contact@org.org",
+    "assistance_link": "https://org.org/apply",
+    "description": "Brief description of who they help and how to contact them"
+  }}
+  ```
+- Look for navigators in:
+  - "Navigator" categorized links from the link catalog
+  - State agency "find local office" or "contact us" pages
+  - Community action agency directories
+  - 211 referral networks if mentioned
+- If no navigators found after thorough search, leave as empty array []
 
 ### Output Requirements
 
@@ -714,15 +752,19 @@ Generate a JSON configuration matching this format:
 ### Quality Checklist
 
 Before returning, verify:
+- [ ] `name_abbreviated` is all lowercase snake_case (e.g., `il_csfp`, not `IL_CSFP` or `il-csfp`)
 - [ ] Program name is official full name (not "Csfp" or "CSFP" alone)
-- [ ] Description is 2 short paragraphs, 8th grade reading level, 100-150 words
-- [ ] Description is clear and concise - no jargon or complex terms
+- [ ] `description` is 2 short paragraphs, 8th grade reading level or below, 100-150 words, sentences ≤ 20 words, acronyms spelled out
+- [ ] `description_short` is plain language, 8th grade reading level or below
+- [ ] `website_description` is plain language, 8th grade reading level or below
+- [ ] All descriptions avoid jargon, acronyms without explanation, and long sentences
 - [ ] Application link extracted from sources (not generic or empty)
 - [ ] Legal status requirements reflect eligibility criteria (do NOT add if source says "NA")
 - [ ] Documents list is relevant to program type and extracted from application materials
 - [ ] Application time is realistic (check form complexity, don't underestimate)
 - [ ] Benefit value is calculated/estimated when possible (not left empty if calculable)
 - [ ] Asset limits extracted if mentioned (especially check application PDFs)
+- [ ] Navigators researched and populated if any navigator/local assistance links were found
 
 Return the complete JSON configuration now:
 """
@@ -912,10 +954,10 @@ This document traces each value in the program configuration back to its source,
 
 ## Navigators
 
-### navigators: []
-- **Source**: Intentionally left empty
-- **How Determined**: To be populated by human with local contact information
-- **Confidence**: N/A
+### navigators: [...]
+- **Source**: Navigator links from link catalog and official program pages
+- **How Determined**: Researched from "Navigator" categorized links, state agency contact pages, and community action directories
+- **Confidence**: High/Medium
 
 ---
 
