@@ -310,7 +310,6 @@ class JSONTestCaseHousehold(BaseModel):
     household_assets: float = 0
     agree_to_tos: bool = True
     is_13_or_older: bool = True
-    housing_situation: str | None = None
     household_members: list[JSONTestCaseMember]
     expenses: list[JSONTestCaseExpense] = Field(default_factory=list)
     # Current benefits (has_* fields)
