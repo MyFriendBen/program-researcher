@@ -130,6 +130,11 @@ Analyze the program documentation to extract all eligibility criteria and map th
    - Residency requirements (state, county, minimum duration)
    - **Preference/priority criteria** (e.g., "preference for households with children")
      - **For PDFs: Use WebFetch to search for "PREFERENCE POINTS" or "PRIORITY" sections**
+   - **Housing/homelessness status**: Do NOT use `needs_housing_help` for homelessness
+     checks — that field means "user wants housing assistance", not their housing type.
+     `housing_situation` exists in the model but is not collected from users. Any
+     criteria requiring knowledge of whether someone is homeless or their housing type
+     must go in `criteria_cannot_evaluate`.
    - **Screening/administrative requirements** (credit checks, background checks, landlord references)
    - Program-specific requirements (work requirements, prior benefit receipt)
    - Exclusion criteria (who is NOT eligible)
