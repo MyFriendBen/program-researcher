@@ -115,6 +115,13 @@ async def extract_criteria_node(state: ResearchState) -> dict:
         data = json.loads(json_match)
 
         # Build criteria objects
+        valid_impact_values = {level.value for level in ImpactLevel}
+
+        def parse_impact(value: str | None) -> ImpactLevel:
+            if value and value in valid_impact_values:
+                return ImpactLevel(value)
+            return ImpactLevel.MEDIUM
+
         criteria_can_evaluate = []
         for item in data.get("criteria_can_evaluate", []):
             criteria_can_evaluate.append(
@@ -125,7 +132,7 @@ async def extract_criteria_node(state: ResearchState) -> dict:
                     screener_fields=item.get("screener_fields"),
                     evaluation_logic=item.get("evaluation_logic"),
                     notes=item.get("notes", ""),
-                    impact=ImpactLevel(item.get("impact") or "Medium"),
+                    impact=parse_impact(item.get("impact")),
                 )
             )
 
@@ -139,7 +146,7 @@ async def extract_criteria_node(state: ResearchState) -> dict:
                     screener_fields=None,
                     evaluation_logic=None,
                     notes=item.get("notes", ""),
-                    impact=ImpactLevel(item.get("impact") or "Medium"),
+                    impact=parse_impact(item.get("impact")),
                 )
             )
 

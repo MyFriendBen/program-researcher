@@ -120,7 +120,10 @@ def build_ticket_content(state: ResearchState) -> LinearTicketContent:
     ]
 
     # Add eligibility criteria with screener field mappings
-    if state.field_mapping and state.field_mapping.criteria_can_evaluate:
+    has_criteria = state.field_mapping and (
+        state.field_mapping.criteria_can_evaluate or state.field_mapping.criteria_cannot_evaluate
+    )
+    if has_criteria:
         description_parts.extend([
             "## Eligibility Criteria",
             "",
@@ -137,14 +140,32 @@ def build_ticket_content(state: ResearchState) -> LinearTicketContent:
                 for field in criterion.screener_fields:
                     description_parts.append(f"     - `{field}`")
 
-            # Add evaluation logic if available
-            if criterion.evaluation_logic:
-                description_parts.append(f"   - Logic: `{criterion.evaluation_logic}`")
-
-            # Add source reference
+            # Add source reference as link if URL, otherwise plain text
             if criterion.source_reference:
-                description_parts.append(f"   - Source: {criterion.source_reference}")
+                if criterion.source_reference.startswith("http"):
+                    description_parts.append(f"   - Source: [{criterion.source_reference}]({criterion.source_reference})")
+                else:
+                    description_parts.append(f"   - Source: {criterion.source_reference}")
 
+            description_parts.append("")
+
+        # Add data gap criteria inline
+        offset = len(state.field_mapping.criteria_can_evaluate)
+        for i, criterion in enumerate(state.field_mapping.criteria_cannot_evaluate, offset + 1):
+            description_parts.extend([
+                f"{i}. **{criterion.criterion}** ⚠️ *data gap*",
+            ])
+
+            if criterion.notes:
+                description_parts.append(f"   - Note: {criterion.notes}")
+
+            if criterion.source_reference:
+                if criterion.source_reference.startswith("http"):
+                    description_parts.append(f"   - Source: [{criterion.source_reference}]({criterion.source_reference})")
+                else:
+                    description_parts.append(f"   - Source: {criterion.source_reference}")
+
+            description_parts.append(f"   - Impact: {criterion.impact}")
             description_parts.append("")
 
     # Add benefit value information if available
@@ -165,29 +186,6 @@ def build_ticket_content(state: ResearchState) -> LinearTicketContent:
         description_parts.append("- See research documentation for benefit amounts")
 
     description_parts.append("")
-
-    # Add data gaps (critical for implementation)
-    if state.field_mapping and state.field_mapping.criteria_cannot_evaluate:
-        description_parts.extend([
-            "## Data Gaps",
-            "",
-            "⚠️  The following criteria cannot be fully evaluated with current screener fields:",
-            "",
-        ])
-
-        for i, criterion in enumerate(state.field_mapping.criteria_cannot_evaluate, 1):
-            description_parts.extend([
-                f"{i}. **{criterion.criterion}**",
-            ])
-
-            if criterion.notes:
-                description_parts.append(f"   - Note: {criterion.notes}")
-
-            if criterion.source_reference:
-                description_parts.append(f"   - Source: {criterion.source_reference}")
-
-            description_parts.append(f"   - Impact: {criterion.impact}")
-            description_parts.append("")
 
     # Add field mapping summary
     if state.field_mapping:
