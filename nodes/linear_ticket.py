@@ -207,27 +207,6 @@ def build_ticket_content(state: ResearchState) -> LinearTicketContent:
             description_parts.append(f"- [{link.title}]({link.url})")
     description_parts.append("")
 
-    # Add program configuration JSON (embed in ticket)
-    if state.program_config:
-        config_json = json.dumps(state.program_config.model_dump(), indent=2)
-        description_parts.extend([
-            "## Program Configuration",
-            "",
-            "Django admin import configuration (ready to use):",
-            "",
-            "```json",
-            config_json,
-            "```",
-            "",
-            "**Human Review Checklist:**",
-            "- [ ] Verify program name and description are accurate",
-            "- [ ] Confirm application link is correct",
-            "- [ ] Add navigator contacts if available",
-            "- [ ] Review required documents list",
-            "- [ ] Check legal status requirements",
-            "",
-        ])
-
     # Add reference to local research output
     if state.output_dir:
         description_parts.extend([
