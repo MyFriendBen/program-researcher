@@ -29,7 +29,7 @@ class Settings(BaseSettings):
 
     # ----- Model Configuration -----
     researcher_model: str = Field(
-        default="claude-sonnet-4-6",
+        default="claude-opus-4-6",
         description="Model to use for researcher agent (extraction, generation)",
     )
     qa_model: str = Field(
