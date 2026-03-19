@@ -629,7 +629,7 @@ Generate a JSON configuration matching this format:
 - Extract from eligibility criteria
 - Common values: ["citizen", "gc_5plus", "gc_5less", "refugee", "otherWithWorkPermission", "non_citizen"]
 - If the program has NO citizenship or immigration requirements, populate with ALL statuses: ["citizen", "gc_5plus", "gc_5less", "refugee", "otherWithWorkPermission", "non_citizen"]
-- NEVER leave as [] — an empty list means no one is eligible, which is almost never correct
+- NEVER leave as [] — an empty list means no one is eligible
 
 **program.name**:
 - Use official program name with acronym from research sources
