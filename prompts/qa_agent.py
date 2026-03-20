@@ -81,6 +81,9 @@ For each item in the field mapping, determine:
    - Are data gaps correctly identified?
    - Are impact assessments reasonable?
 
+4. **Current Year Thresholds**:
+   - Verify that all numeric thresholds (income limits, asset limits, FPL percentages) reflect current program year values, not outdated amounts.
+
 ### Output Format
 
 Return a JSON object:

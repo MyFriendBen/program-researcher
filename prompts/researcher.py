@@ -512,6 +512,7 @@ Return a JSON object for this SINGLE test case:
 ### Important
 - Return ONLY the JSON object for this single test case
 - **CRITICAL**: birth_year values MUST be calculated from the current year ({current_year}), not guessed
+- **CRITICAL**: Always use income limits, asset limits, and FPL thresholds from the current program year ({current_year}). Do not use prior-year values.
 - Use realistic values based on current FPL and program thresholds
 - Ensure the scenario is DIFFERENT from previously generated ones
 - Make sure to test the specific aspect described in the category description
