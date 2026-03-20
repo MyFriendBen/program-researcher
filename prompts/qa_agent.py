@@ -72,7 +72,7 @@ For each item in the field mapping, determine:
 
 2. **Criteria Extraction**:
    - Are ALL eligibility criteria captured?
-   - Are source citations accurate?
+   - Are source citations accurate? **Especially verify that the citations and sources are accurate — ensure the cited criteria can actually be found at the cited source location.**
    - Are thresholds correct (exact FPL percentages, age limits)?
 
 3. **Field Mapping**:
