@@ -1015,6 +1015,44 @@ This document traces each value in the program configuration back to its source,
 Return ONLY the markdown document following the structure above. This will be saved as `sources.md` in the ticket_content directory.
 """
 
+SELECT_JSON_CASES_PROMPT = """## Task: Select 3 Test Cases for JSON Conversion
+
+You have generated {total_cases} test scenarios for **{program_name}** ({white_label}).
+
+Your job is to designate exactly 3 of them to be converted into automated JSON test cases.
+
+## All Generated Scenarios
+
+{scenario_list}
+
+## Selection Criteria
+
+Choose 3 scenarios that together give the best automated test coverage:
+
+1. **Include at least one ineligible case** — automated tests that verify a household does NOT qualify are just as important as eligible ones. Prefer a scenario where the household clearly fails a specific rule (income over limit, excluded due to other benefit, wrong age, etc.) over one that's only ineligible due to an unclear reason.
+2. **Cover distinct failure/pass reasons** — don't pick two scenarios that test the same boundary. Spread coverage across the most important eligibility rules for this specific program.
+3. **Prefer program-specific scenarios** — favor scenarios that test rules unique to this program (e.g., a specific asset limit, a categorical eligibility tie-in, a residency rule) over generic ones that would apply to any benefit program.
+4. **Ensure the household data is fully specified** — scenarios with complete members_data (income, age, relationships) convert more reliably than ones with sparse data.
+
+## Output
+
+Return ONLY a JSON object in this exact format:
+
+```json
+{{
+  "selected_scenario_numbers": [1, 5, 10],
+  "reasoning": {{
+    "1": "Happy path — tests the typical eligible household with all criteria clearly met",
+    "5": "Income just above limit — verifies the program correctly rejects over-income households",
+    "10": "SNAP exclusion — tests a program-specific rule that SNAP recipients are ineligible"
+  }}
+}}
+```
+
+- `selected_scenario_numbers` must contain exactly 3 integers matching scenario numbers from the list above
+- `reasoning` must have one entry per selected scenario number explaining why it was chosen
+"""
+
 # Dictionary for easy access
 RESEARCHER_PROMPTS = {
     "system": SYSTEM_PROMPT,
@@ -1027,4 +1065,5 @@ RESEARCHER_PROMPTS = {
     "generate_program_config": GENERATE_PROGRAM_CONFIG_PROMPT,
     "generate_sources_documentation": GENERATE_SOURCES_DOCUMENTATION_PROMPT,
     "test_case_categories": TEST_CASE_CATEGORIES,
+    "select_json_cases": SELECT_JSON_CASES_PROMPT,
 }

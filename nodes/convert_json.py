@@ -8,11 +8,7 @@ import json
 import urllib.error
 from datetime import date
 
-from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage
-
 from ..config import settings
-from ..prompts.researcher import RESEARCHER_PROMPTS
 from ..state import (
     JSONTestCaseExpense,
     JSONTestCaseIncomeStream,
@@ -25,69 +21,6 @@ from ..state import (
     WorkflowStatus,
 )
 from ..tools.schema_validator import fetch_schema, validate_test_case
-
-
-# Priority categories in order
-PRIORITY_CATEGORIES = ["happy_path", "income_threshold", "exclusion"]
-
-
-def select_json_test_cases(test_cases, max_cases: int = 3):
-    """Select the most important and distinct test cases for JSON conversion.
-
-    Priority:
-    1. happy_path — first match
-    2. income_threshold — prefer expected_eligible=False (above limit); fall back to any
-    3. exclusion — first match
-
-    If a priority category is missing, fill from remaining categories.
-    """
-    selected = []
-    used_indices = set()
-
-    # Pass 1: pick one from each priority category
-    for priority_cat in PRIORITY_CATEGORIES:
-        if len(selected) >= max_cases:
-            break
-        # For income_threshold, prefer not-eligible scenario
-        if priority_cat == "income_threshold":
-            candidates = [
-                (i, tc) for i, tc in enumerate(test_cases)
-                if tc.category == priority_cat and not tc.expected_eligible and i not in used_indices
-            ]
-            if not candidates:
-                candidates = [
-                    (i, tc) for i, tc in enumerate(test_cases)
-                    if tc.category == priority_cat and i not in used_indices
-                ]
-        else:
-            candidates = [
-                (i, tc) for i, tc in enumerate(test_cases)
-                if tc.category == priority_cat and i not in used_indices
-            ]
-        if candidates:
-            idx, tc = candidates[0]
-            selected.append(tc)
-            used_indices.add(idx)
-
-    # Pass 2: fill remaining slots from other categories (distinct)
-    seen_categories = {tc.category for tc in selected}
-    for i, tc in enumerate(test_cases):
-        if len(selected) >= max_cases:
-            break
-        if i not in used_indices and tc.category not in seen_categories:
-            selected.append(tc)
-            used_indices.add(i)
-            seen_categories.add(tc.category)
-
-    # Pass 3: if still not enough, fill from any remaining
-    for i, tc in enumerate(test_cases):
-        if len(selected) >= max_cases:
-            break
-        if i not in used_indices:
-            selected.append(tc)
-            used_indices.add(i)
-
-    return selected
 
 
 async def convert_to_json_node(state: ResearchState) -> dict:
@@ -125,8 +58,11 @@ async def convert_to_json_node(state: ResearchState) -> dict:
             "error_message": f"Failed to fetch schema: {e}",
         }
 
-    # Select the 3 most important and distinct test cases for JSON conversion
-    selected_cases = select_json_test_cases(state.test_suite.test_cases, max_cases=3)
+    # Use cases designated by the researcher's post-generation selection pass
+    selected_cases = [tc for tc in state.test_suite.test_cases if tc.json_priority]
+    if not selected_cases:
+        # Fallback: shouldn't happen, but take the first 3 if flag was never set
+        selected_cases = state.test_suite.test_cases[:3]
     messages.append(f"Selected {len(selected_cases)} of {len(state.test_suite.test_cases)} test cases for JSON conversion")
 
     # Convert selected test cases

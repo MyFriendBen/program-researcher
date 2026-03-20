@@ -171,6 +171,11 @@ async def generate_tests_node(state: ResearchState) -> dict:
             "status": WorkflowStatus.FAILED,
         }
 
+    # Post-generation pass: ask LLM to designate 3 cases for JSON conversion
+    test_cases = await select_json_priority_cases(
+        test_cases, state.program_name, state.white_label, llm, messages
+    )
+
     # Build test suite
     test_suite = ScenarioSuite(
         program_name=state.program_name,
@@ -192,6 +197,71 @@ async def generate_tests_node(state: ResearchState) -> dict:
         "test_suite": test_suite,
         "messages": messages,
     }
+
+
+async def select_json_priority_cases(
+    test_cases: list[HumanTestCase],
+    program_name: str,
+    white_label: str,
+    llm: ChatAnthropic,
+    messages: list[str],
+) -> list[HumanTestCase]:
+    """Ask the LLM to designate 3 test cases for JSON conversion.
+
+    Falls back to the first 3 cases if the LLM call fails.
+    """
+    scenario_lines = "\n".join(
+        f"- Scenario {tc.scenario_number} [{tc.category}] "
+        f"(eligible={tc.expected_eligible}): {tc.title} — {tc.what_checking}"
+        for tc in test_cases
+    )
+
+    prompt = RESEARCHER_PROMPTS["select_json_cases"].format(
+        program_name=program_name,
+        white_label=white_label,
+        total_cases=len(test_cases),
+        scenario_list=scenario_lines,
+    )
+
+    try:
+        response = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+
+        response_text = response.content
+        if isinstance(response_text, list):
+            response_text = response_text[0].get("text", "") if response_text else ""
+
+        if "```json" in response_text:
+            response_text = response_text.split("```json")[1].split("```")[0]
+        elif "```" in response_text:
+            response_text = response_text.split("```")[1].split("```")[0]
+
+        result = json.loads(response_text)
+        selected_numbers = set(result.get("selected_scenario_numbers", []))
+        reasoning = result.get("reasoning", {})
+
+        if len(selected_numbers) != 3:
+            raise ValueError(f"Expected 3 selected scenarios, got {len(selected_numbers)}")
+
+        for tc in test_cases:
+            if tc.scenario_number in selected_numbers:
+                tc.json_priority = True
+
+        for num, reason in reasoning.items():
+            messages.append(f"  JSON priority scenario {num}: {reason}")
+
+        messages.append(f"Designated {len(selected_numbers)} scenarios for JSON conversion")
+
+    except Exception as e:
+        messages.append(f"JSON case selection failed ({e}), falling back to first 3 cases")
+        for tc in test_cases[:3]:
+            tc.json_priority = True
+
+    return test_cases
 
 
 def format_evaluable_criteria(mapping) -> str:
