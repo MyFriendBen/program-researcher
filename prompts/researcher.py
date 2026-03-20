@@ -219,16 +219,35 @@ Create comprehensive test scenarios for manual QA testing of the program impleme
 
 ### Instructions
 
-Generate only **2-3 of the most important and distinct test scenarios**:
+Generate **10-15 test scenarios** covering:
 
-1. **Happy Path** (1 scenario)
-   - Clearly eligible household — typical applicant who easily qualifies
+1. **Happy Path** (2 scenarios)
+   - Clearly eligible household
+   - Minimally eligible (just meets all criteria)
 
-2. **Income Threshold** (1 scenario)
-   - Income just above limit — should NOT be eligible
+2. **Income Thresholds** (3-4 scenarios)
+   - Income just below limit (eligible)
+   - Income exactly at limit (eligible)
+   - Income just above limit (not eligible)
+   - Multiple income sources if relevant
 
-3. **Exclusion** (1 scenario)
-   - Categorical exclusion or clear ineligibility that does not rely on any data gaps
+3. **Age Thresholds** (2-3 scenarios) - if program has age requirements
+   - Age just below minimum (not eligible)
+   - Age exactly at minimum (eligible)
+   - Age above minimum (eligible)
+
+4. **Geographic** (1-2 scenarios) - if program has geographic limits
+   - Eligible location
+   - Ineligible location
+
+5. **Exclusions** (2 scenarios)
+   - Already has the benefit
+   - Citizenship/status restriction (if applicable)
+
+6. **Multi-Member Households** (2-3 scenarios)
+   - Mixed household (some members eligible, some not)
+   - All members eligible
+   - No members eligible
 
 ### Output Format
 
@@ -502,8 +521,19 @@ Return a JSON object for this SINGLE test case:
 # Test case categories with descriptions
 TEST_CASE_CATEGORIES = [
     ("happy_path", "Clearly eligible household - typical applicant who easily qualifies"),
+    ("happy_path", "Minimally eligible - just barely meets all criteria"),
+    ("income_threshold", "Income just below limit - should be eligible"),
+    ("income_threshold", "Income exactly at limit - should be eligible"),
     ("income_threshold", "Income just above limit - should NOT be eligible"),
-    ("exclusion", "Categorical exclusion or clear ineligibility not relying on any data gaps"),
+    ("age_threshold", "Age exactly at minimum requirement - should be eligible"),
+    ("age_threshold", "Age just below minimum - should NOT be eligible"),
+    ("age_threshold", "Age well above minimum - should be eligible"),
+    ("geographic", "Eligible location within service area"),
+    ("exclusion", "Already receives the benefit - should show as ineligible or different message"),
+    ("exclusion", "Excluded due to other program participation (e.g., SNAP for CSFP)"),
+    ("multi_member", "Mixed household - some members eligible, some not"),
+    ("multi_member", "Multiple eligible members in same household"),
+    ("edge_case", "Boundary condition or unusual but valid scenario"),
 ]
 
 GENERATE_PROGRAM_CONFIG_PROMPT = """## Task: Generate Program Configuration JSON
