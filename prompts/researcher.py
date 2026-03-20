@@ -638,6 +638,7 @@ Generate a JSON configuration matching this format:
 - Extract from program overview or source titles
 
 **program.description**:
+- **Do NOT include specific dollar amounts or income thresholds** — these change year to year and are hard to maintain
 - **REQUIRED: 8th grade reading level or below** (Flesch-Kincaid Grade Level ≤ 8)
 - Write 2 short paragraphs (100-150 words total)
 - **Max sentence length: 20 words. If a sentence is longer, split it.**
