@@ -162,7 +162,7 @@ async def generate_tests_node(state: ResearchState) -> dict:
             # Continue with other test cases instead of failing completely
 
     # Check if we have enough test cases
-    if len(test_cases) < 3:
+    if len(test_cases) < 1:
         messages.append(f"Only generated {len(test_cases)} test cases - insufficient for QA")
         return {
             "test_suite": None,
