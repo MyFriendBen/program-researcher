@@ -59,10 +59,9 @@ async def convert_to_json_node(state: ResearchState) -> dict:
         }
 
     # Use cases designated by the researcher's post-generation selection pass
-    selected_cases = [tc for tc in state.test_suite.test_cases if tc.json_priority]
+    selected_cases = [tc for tc in state.test_suite.test_cases if tc.convert_to_json]
     if not selected_cases:
-        # Fallback: shouldn't happen, but take the first 3 if flag was never set
-        selected_cases = state.test_suite.test_cases[:3]
+        messages.append("ERROR: No test cases were designated for JSON conversion. Writing 0 cases.")
     messages.append(f"Selected {len(selected_cases)} of {len(state.test_suite.test_cases)} test cases for JSON conversion")
 
     # Convert selected test cases

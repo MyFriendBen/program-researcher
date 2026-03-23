@@ -249,17 +249,15 @@ async def select_json_priority_cases(
 
         for tc in test_cases:
             if tc.scenario_number in selected_numbers:
-                tc.json_priority = True
+                tc.convert_to_json = True
 
         for num, reason in reasoning.items():
-            messages.append(f"  JSON priority scenario {num}: {reason}")
+            messages.append(f"  JSON conversion scenario {num}: {reason}")
 
         messages.append(f"Designated {len(selected_numbers)} scenarios for JSON conversion")
 
     except Exception as e:
-        messages.append(f"JSON case selection failed ({e}), falling back to first 3 cases")
-        for tc in test_cases[:3]:
-            tc.json_priority = True
+        messages.append(f"ERROR: JSON case selection failed ({e}). No cases will be designated for JSON conversion.")
 
     return test_cases
 

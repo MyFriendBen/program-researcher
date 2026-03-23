@@ -201,7 +201,7 @@ class HumanTestCase(BaseModel):
         default_factory=dict, description="Current benefits checkboxes"
     )
     citizenship_status: str = Field(default="citizen", description="Citizenship/legal status")
-    json_priority: bool = Field(default=False, description="Designated for JSON conversion by post-generation LLM pass")
+    convert_to_json: bool = Field(default=False, description="Designated for JSON conversion by post-generation LLM pass")
 
 
 class ScenarioSuite(BaseModel):
