@@ -6,6 +6,7 @@ page for checking status and downloading output files.
 """
 
 import os
+import ssl
 
 from flask import Flask, redirect, render_template, request, url_for
 from redis import Redis
@@ -28,8 +29,12 @@ app.secret_key = os.environ.get("SECRET_KEY", "dev-secret-change-me")
 AUTH_PASSWORD = os.environ.get("APP_PASSWORD", "")
 
 # Redis / RQ setup
+# Heroku Redis uses self-signed certs, so we need to skip verification
 redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-redis_conn = Redis.from_url(redis_url)
+if redis_url.startswith("rediss://"):
+    redis_conn = Redis.from_url(redis_url, ssl_cert_reqs="none")
+else:
+    redis_conn = Redis.from_url(redis_url)
 queue = Queue("research", connection=redis_conn)
 
 
