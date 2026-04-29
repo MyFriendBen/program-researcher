@@ -2,6 +2,8 @@
 Start the RQ worker with proper Heroku Redis SSL handling.
 """
 
+import web.module_setup  # noqa: F401 — must run before program_research_agent imports
+
 import os
 
 from redis import Redis

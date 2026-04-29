@@ -5,6 +5,8 @@ This is the function that gets enqueued by the Flask app and executed
 by the worker dyno.
 """
 
+import web.module_setup  # noqa: F401 — must run before program_research_agent imports
+
 import asyncio
 import os
 import smtplib
@@ -146,7 +148,7 @@ def run_research_job(
 
     try:
         # Import here so the worker process loads the research code
-        from program_researcher.graph import run_research
+        from program_research_agent.graph import run_research
 
         job.meta["step"] = "running research workflow"
         job.save_meta()
