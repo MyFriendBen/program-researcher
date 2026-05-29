@@ -316,6 +316,60 @@ For typical research (1-2 PDFs): adds ~$0.04 per program run.
 - Embeds program configuration
 - Attaches test case files
 
+## Web Service (Heroku)
+
+The tool can also run as a shared web service on Heroku, so anyone in the org can trigger a research run from a browser without needing Python or a local clone.
+
+### How it works
+
+A simple Flask form collects the program name, state, source URLs, and your email. The job is queued in Redis and picked up by a background worker dyno that runs the same `run_research()` function as the CLI. When it finishes, the output files (config JSON, test cases JSON, ticket markdown) are emailed to you as attachments.
+
+### Architecture
+
+```
+Browser (form) → Flask web dyno → Redis queue → Worker dyno → Email results
+```
+
+The worker also runs a boot script (`bin/fetch_sibling_files.sh`) that fetches `models.py` and `FormData.ts` from the benefits-api and benefits-calculator repos on GitHub, since those sibling repos aren't available on Heroku.
+
+### Files
+
+```
+web/
+├── app.py              # Flask routes (form, submit, results, jobs list)
+├── worker.py           # RQ job function (runs research, emails results)
+├── run_worker.py       # Worker entry point with Heroku Redis SSL handling
+├── module_setup.py     # Module alias so program_research_agent imports work
+├── rq_settings.py      # RQ connection settings
+├── .env.example        # All environment variables documented
+└── templates/          # HTML templates (form, results, jobs, login)
+bin/
+└── fetch_sibling_files.sh  # Downloads models.py and FormData.ts at boot
+Procfile                # Heroku dyno definitions (web + worker)
+Aptfile                 # System packages (poppler-utils)
+runtime.txt             # Python version
+DEPLOY.md               # Step-by-step deploy guide
+```
+
+### Deploying
+
+See [DEPLOY.md](DEPLOY.md) for the full step-by-step guide. The short version:
+
+```bash
+heroku create your-app-name --team your-team
+heroku buildpacks:add heroku-community/apt
+heroku buildpacks:add heroku/python
+heroku addons:create heroku-redis:mini
+heroku config:set RESEARCH_AGENT_ANTHROPIC_API_KEY=sk-ant-...
+heroku config:set SMTP_USER=you@myfriendben.org
+heroku config:set SMTP_PASSWORD=your-gmail-app-password
+heroku config:set EMAIL_FROM=you@myfriendben.org
+heroku config:set APP_PASSWORD=your-team-password
+heroku config:set SECRET_KEY=$(openssl rand -hex 32)
+git push heroku main
+heroku ps:scale web=1 worker=1
+```
+
 ## Development
 
 ### Running Tests
@@ -338,7 +392,7 @@ mypy .
 
 ```
 program-researcher/
-├── run.py                    # Entry point script (handles module aliasing)
+├── run.py                    # CLI entry point (handles module aliasing)
 ├── __init__.py               # Package exports
 ├── graph.py                  # Main LangGraph definition
 ├── state.py                  # Pydantic state models
@@ -356,14 +410,25 @@ program-researcher/
 │   └── linear_ticket.py
 ├── tools/                    # Utility tools
 │   ├── web_research.py       # Web fetching and PDF handling
-│   ├── pdf_vision.py         # NEW: PDF to image conversion
-│   ├── vision_helper.py      # NEW: Vision message formatting
+│   ├── pdf_vision.py         # PDF to image conversion
+│   ├── vision_helper.py      # Vision message formatting
 │   ├── screener_fields.py
 │   ├── schema_validator.py
 │   └── output_saver.py       # Step output and summary generation
 ├── prompts/                  # Agent system prompts
 │   ├── researcher.py
 │   └── qa_agent.py
+├── web/                      # Heroku web service
+│   ├── app.py                # Flask routes
+│   ├── worker.py             # RQ job (runs research, emails results)
+│   ├── run_worker.py         # Worker entry point
+│   ├── module_setup.py       # Module alias for Heroku
+│   └── templates/            # HTML templates
+├── bin/                      # Scripts
+│   └── fetch_sibling_files.sh  # Downloads sibling repo files at boot
+├── Procfile                  # Heroku dyno definitions
+├── Aptfile                   # System packages for Heroku
+├── DEPLOY.md                 # Heroku deploy guide
 ├── tests/                    # Test suite
 ├── examples/                 # Example scripts
 │   └── research_csfp.py
