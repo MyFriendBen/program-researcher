@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Login — Program Researcher{% endblock %}
+
+{% block content %}
+<h1>Program Researcher</h1>
+<p class="subtitle">Enter the team password to continue.</p>
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+<form method="POST" action="/login">
+  <div class="card">
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password" required autofocus>
+    <button type="submit">Log In</button>
+  </div>
+</form>
+{% endblock %}

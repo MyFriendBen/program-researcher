@@ -25,3 +25,9 @@ PyPDF2>=3.0.0
 click>=8.1.0
 rich>=13.0.0
 python-dotenv>=1.0.0
+
+# Web service
+flask>=3.0.0
+gunicorn>=22.0.0
+redis>=5.0.0
+rq>=1.16.0

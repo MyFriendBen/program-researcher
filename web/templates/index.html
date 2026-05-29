@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+
+{% block title %}New Research — Program Researcher{% endblock %}
+
+{% block content %}
+<h1>Program Researcher</h1>
+<p class="subtitle">Enter program details and source URLs to start a research run.</p>
+
+{% if error %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+<form method="POST" action="/submit">
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="program">Program Name</label>
+        <div class="hint">e.g. LIHEAP, SNAP, WIC, CSFP</div>
+        <input type="text" id="program" name="program" required
+               value="{{ form.program if form else '' }}"
+               placeholder="LIHEAP">
+      </div>
+      <div>
+        <label for="state">State</label>
+        <div class="hint">2-letter code</div>
+        <input type="text" id="state" name="state" required maxlength="2"
+               value="{{ form.state if form else '' }}"
+               placeholder="il">
+      </div>
+      <div>
+        <label for="white_label">White Label</label>
+        <div class="hint">Usually same as state</div>
+        <input type="text" id="white_label" name="white_label" required maxlength="20"
+               value="{{ form.white_label if form else '' }}"
+               placeholder="il">
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <label for="email">Send results to</label>
+    <div class="hint">You'll get the output files emailed when the run finishes.</div>
+    {% if org_emails %}
+    <select id="email" name="email" style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;margin-bottom:1rem;background:#fff;">
+      <option value="">Select your email…</option>
+      {% for e in org_emails %}
+      <option value="{{ e }}" {% if form and form.email == e %}selected{% endif %}>{{ e }}</option>
+      {% endfor %}
+      <option value="_other">Other…</option>
+    </select>
+    <input type="email" id="email_other" name="email_other" placeholder="you@example.org"
+           style="display:none;margin-top:-0.5rem;"
+           value="{{ form.email if form and form.email not in org_emails else '' }}">
+    <script>
+      document.getElementById('email').addEventListener('change', function() {
+        var other = document.getElementById('email_other');
+        other.style.display = this.value === '_other' ? 'block' : 'none';
+      });
+    </script>
+    {% else %}
+    <input type="email" id="email" name="email" required
+           value="{{ form.email if form else '' }}"
+           placeholder="you@myfriendben.org">
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <label>Source URLs</label>
+    <div class="hint">Official government sources — at least 1 required, up to 5.</div>
+    {% for i in range(1, 6) %}
+    <input type="url" name="source_url_{{ i }}"
+           value="{{ form['source_url_' ~ i] if form and form['source_url_' ~ i] else '' }}"
+           placeholder="https://{% if i == 1 %}dshs.wa.gov/program-page{% elif i == 2 %}app.leg.wa.gov/wac/...{% else %}...{% endif %}">
+    {% endfor %}
+  </div>
+
+  <button type="submit">Start Research</button>
+</form>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Job {{ job_id[:8] }} — Program Researcher{% endblock %}
+
+{% block content %}
+<h1>Research Run</h1>
+<p class="subtitle">Job {{ job_id[:8] }}…</p>
+
+{% if error and status != "failed" %}
+<div class="error">{{ error }}</div>
+{% endif %}
+
+<div class="card">
+  <table>
+    <tr>
+      <th>Status</th>
+      <td>
+        <span class="badge badge-{{ status }}">{{ status }}</span>
+      </td>
+    </tr>
+    {% if meta.program %}
+    <tr><th>Program</th><td>{{ meta.program }}</td></tr>
+    {% endif %}
+    {% if meta.state_code %}
+    <tr><th>State</th><td>{{ meta.state_code | upper }}</td></tr>
+    {% endif %}
+    {% if meta.step %}
+    <tr><th>Current Step</th><td>{{ meta.step }}</td></tr>
+    {% endif %}
+    {% if meta.source_urls %}
+    <tr>
+      <th>Sources</th>
+      <td>
+        {% for url in meta.source_urls %}
+          <a href="{{ url }}" target="_blank" rel="noopener">{{ url | truncate(60) }}</a><br>
+        {% endfor %}
+      </td>
+    </tr>
+    {% endif %}
+  </table>
+</div>
+
+{% if status == "failed" %}
+<div class="card">
+  <h3 style="color: var(--danger); margin-bottom: 0.5rem;">Error</h3>
+  <pre>{{ error or meta.get("error", "Unknown error") }}</pre>
+  {% if meta.traceback %}
+  <details style="margin-top: 1rem;">
+    <summary style="cursor: pointer; color: var(--muted); font-size: 0.85rem;">Full traceback</summary>
+    <pre style="margin-top: 0.5rem;">{{ meta.traceback }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if status == "finished" and emailed_to %}
+<div class="card" style="background: #f0fdf4; border-color: #bbf7d0;">
+  <p>Results emailed to <strong>{{ emailed_to }}</strong>. Check your inbox for the output files.</p>
+</div>
+{% elif status == "finished" and not emailed_to %}
+<div class="card" style="background: #fefce8; border-color: #fde68a;">
+  <p>Research finished but email delivery is not configured (SMTP credentials missing).
+     Check the Heroku logs for the output directory path.</p>
+</div>
+{% endif %}
+
+{% if status == "finished" and summary %}
+<div class="card">
+  <h3 style="margin-bottom: 0.75rem;">Summary</h3>
+  <pre>{{ summary }}</pre>
+</div>
+{% endif %}
+
+{% if status in ("queued", "started") %}
+<script>
+  // Auto-refresh every 10 seconds while the job is running
+  setTimeout(function() { location.reload(); }, 10000);
+</script>
+<p style="color: var(--muted); font-size: 0.85rem; margin-top: 1rem;">
+  This page refreshes automatically every 10 seconds.
+  Research runs typically take 5–15 minutes.
+</p>
+{% endif %}
+
+{% endblock %}
