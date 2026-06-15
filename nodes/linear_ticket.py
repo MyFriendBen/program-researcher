@@ -216,7 +216,7 @@ def build_ticket_content(state: ResearchState) -> LinearTicketContent:
             "",
             "Files generated:",
             "- Program config: `{white_label}_{program_name}_initial_config.json`",
-            "- Test cases: `{white_label}_{program_name}_test_cases.json`",
+            "- Test cases: `{white_label}_{program_name}.json`",
             "- Full research data in output directory",
             "",
         ])
@@ -275,7 +275,7 @@ def save_json_test_cases(state: ResearchState) -> str:
     from pathlib import Path
 
     safe_name = sanitize_for_filename(state.program_name)
-    filename = f"{state.white_label}_{safe_name}_test_cases.json"
+    filename = f"{state.white_label.lower()}_{safe_name}.json"
 
     # Use ticket_content subdirectory within the timestamped output directory
     if state.output_dir:
@@ -298,7 +298,7 @@ def save_program_config(state: ResearchState) -> str:
     from pathlib import Path
 
     safe_name = sanitize_for_filename(state.program_name)
-    filename = f"{state.white_label}_{safe_name}_initial_config.json"
+    filename = f"{state.white_label.lower()}_{safe_name}_initial_config.json"
 
     # Use ticket_content subdirectory within the timestamped output directory
     if state.output_dir:
@@ -322,7 +322,7 @@ def save_ticket_content_locally(content: LinearTicketContent, state: ResearchSta
     from pathlib import Path
 
     safe_name = sanitize_for_filename(state.program_name)
-    filename = f"{state.white_label}_{safe_name}_ticket.md"
+    filename = f"{state.white_label.lower()}_{safe_name}_spec.md"
 
     # Use ticket_content subdirectory within the timestamped output directory
     if state.output_dir:

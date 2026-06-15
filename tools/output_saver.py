@@ -5,6 +5,7 @@ Saves each step's output to timestamped files for debugging and auditing.
 """
 
 import json
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,19 +15,56 @@ from pydantic import BaseModel
 from ..config import settings
 
 
-def sanitize_for_filename(name: str) -> str:
-    """Sanitize a string for use in file/directory names.
+# Words ignored when abbreviating a multi-word program name.
+_ABBREVIATION_STOPWORDS = {
+    # articles
+    "the", "a", "an",
+    # prepositions
+    "of", "by", "for", "in", "on", "with", "to", "from", "at", "as",
+    # conjunctions
+    "and", "or", "but",
+}
 
-    Replaces characters that are invalid in file paths (like '/') with safe alternatives.
+
+def _to_snake_case(text: str) -> str:
+    """Lowercase ``text`` and collapse every run of non-alphanumeric characters into a single underscore."""
+    return re.sub(r"[^a-zA-Z0-9]+", "_", text).strip("_").lower()
+
+
+def sanitize_for_filename(name: str) -> str:
+    """Build a lowercase, snake_case slug for a program name, safe for file/directory names.
+
+    Rules (in priority order):
+    1. If the name already carries a parenthesized abbreviation -- an ``(...)`` group whose
+       contents have no internal whitespace, e.g. ``Commodity Supplemental Food Program (CSFP)``
+       -- that abbreviation is used (``csfp``).
+    2. Otherwise, if the name has 3 or more *significant* words (ignoring articles,
+       prepositions, and conjunctions), it is abbreviated to the first character of each
+       significant word, e.g. ``Weatherization Assistance Program`` -> ``wap`` and
+       ``Supportive Services for Veteran Families`` -> ``ssvf``.
+    3. Otherwise the full name is snake_cased, e.g. ``Help For Families`` -> ``help_for_families``
+       and ``2 Paths`` -> ``2_paths``.
+
+    The result is always lowercase and contains only ``[a-z0-9_]``.
     """
-    # Replace forward slash (and backslash) with a hyphen
-    sanitized = name.replace("/", "-").replace("\\", "-")
-    # Collapse multiple hyphens/spaces from the replacement
-    while "  " in sanitized:
-        sanitized = sanitized.replace("  ", " ")
-    while "--" in sanitized:
-        sanitized = sanitized.replace("--", "-")
-    return sanitized.strip(" -")
+    # Rule 1: an explicit parenthesized abbreviation (no internal whitespace) wins outright.
+    paren_match = re.search(r"\(([^()\s]+)\)", name)
+    if paren_match:
+        return _to_snake_case(paren_match.group(1))
+
+    # Drop any parenthetical groups before analyzing the remaining words.
+    without_parens = re.sub(r"\([^()]*\)", " ", name)
+
+    # Split on any non-alphanumeric boundary, then drop the stopwords for the abbreviation.
+    words = re.findall(r"[a-zA-Z0-9]+", without_parens)
+    significant = [w for w in words if w.lower() not in _ABBREVIATION_STOPWORDS]
+
+    # Rule 2: abbreviate when there are 3+ significant words.
+    if len(significant) >= 3:
+        return "".join(word[0] for word in significant).lower()
+
+    # Rule 3: snake_case the full name (stopwords retained).
+    return _to_snake_case(without_parens)
 
 
 def get_research_output_dir(white_label: str, program_name: str) -> Path:
@@ -38,7 +76,7 @@ def get_research_output_dir(white_label: str, program_name: str) -> Path:
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_name = sanitize_for_filename(program_name)
-    output_dir = settings.output_dir / f"{white_label}_{safe_name}_{timestamp}"
+    output_dir = settings.output_dir / f"{white_label.lower()}_{safe_name}_{timestamp}"
     output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir
 
