@@ -39,7 +39,7 @@ Or use local files if Linear isn't configured.
 
 Each research run creates a timestamped directory. File names should be both lowercase and snakecase:
 
-```
+```text
 output/il_csfp_20260214_163629/
 ├── ticket_content/                          ← Files for ticket/review
 │   ├── il_csfp_initial_config.json          ← Django admin config
