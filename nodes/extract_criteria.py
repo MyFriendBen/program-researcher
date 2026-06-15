@@ -21,6 +21,64 @@ from ..tools.screener_fields import format_fields_for_prompt
 from ..tools.vision_helper import is_pdf_vision_content
 
 
+def extract_json_block(response_text: str) -> str:
+    """Pull the JSON payload out of an LLM response, handling ```json fences."""
+    if "```json" in response_text:
+        return response_text.split("```json")[1].split("```")[0]
+    if "```" in response_text:
+        return response_text.split("```")[1].split("```")[0]
+    return response_text
+
+
+def build_field_mapping(program_name: str, data: dict) -> FieldMapping:
+    """Build a FieldMapping from the parsed extraction/fix JSON payload.
+
+    Shared by extract_criteria_node and fix_research_node so both parse the
+    identical schema. criteria_cannot_evaluate are data gaps, so screener_fields
+    and evaluation_logic are forced to None there.
+    """
+    valid_impact_values = {level.value for level in ImpactLevel}
+
+    def parse_impact(value: str | None) -> ImpactLevel:
+        if value and value in valid_impact_values:
+            return ImpactLevel(value)
+        return ImpactLevel.MEDIUM
+
+    criteria_can_evaluate = [
+        EligibilityCriterion(
+            criterion=item.get("criterion", ""),
+            source_reference=item.get("source_reference", ""),
+            source_url=item.get("source_url"),
+            screener_fields=item.get("screener_fields"),
+            evaluation_logic=item.get("evaluation_logic"),
+            notes=item.get("notes", ""),
+            impact=parse_impact(item.get("impact")),
+        )
+        for item in data.get("criteria_can_evaluate", [])
+    ]
+
+    criteria_cannot_evaluate = [
+        EligibilityCriterion(
+            criterion=item.get("criterion", ""),
+            source_reference=item.get("source_reference", ""),
+            source_url=item.get("source_url"),
+            screener_fields=None,
+            evaluation_logic=None,
+            notes=item.get("notes", ""),
+            impact=parse_impact(item.get("impact")),
+        )
+        for item in data.get("criteria_cannot_evaluate", [])
+    ]
+
+    return FieldMapping(
+        program_name=program_name,
+        criteria_can_evaluate=criteria_can_evaluate,
+        criteria_cannot_evaluate=criteria_cannot_evaluate,
+        summary=data.get("summary", ""),
+        recommendations=data.get("recommendations", []),
+    )
+
+
 async def extract_criteria_node(state: ResearchState) -> dict:
     """
     Extract eligibility criteria from documentation and map to screener fields.
@@ -106,61 +164,12 @@ async def extract_criteria_node(state: ResearchState) -> dict:
 
     # Extract JSON from response
     try:
-        json_match = response_text
-        if "```json" in response_text:
-            json_match = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            json_match = response_text.split("```")[1].split("```")[0]
-
-        data = json.loads(json_match)
-
-        # Build criteria objects
-        valid_impact_values = {level.value for level in ImpactLevel}
-
-        def parse_impact(value: str | None) -> ImpactLevel:
-            if value and value in valid_impact_values:
-                return ImpactLevel(value)
-            return ImpactLevel.MEDIUM
-
-        criteria_can_evaluate = []
-        for item in data.get("criteria_can_evaluate", []):
-            criteria_can_evaluate.append(
-                EligibilityCriterion(
-                    criterion=item.get("criterion", ""),
-                    source_reference=item.get("source_reference", ""),
-                    source_url=item.get("source_url"),
-                    screener_fields=item.get("screener_fields"),
-                    evaluation_logic=item.get("evaluation_logic"),
-                    notes=item.get("notes", ""),
-                    impact=parse_impact(item.get("impact")),
-                )
-            )
-
-        criteria_cannot_evaluate = []
-        for item in data.get("criteria_cannot_evaluate", []):
-            criteria_cannot_evaluate.append(
-                EligibilityCriterion(
-                    criterion=item.get("criterion", ""),
-                    source_reference=item.get("source_reference", ""),
-                    source_url=item.get("source_url"),
-                    screener_fields=None,
-                    evaluation_logic=None,
-                    notes=item.get("notes", ""),
-                    impact=parse_impact(item.get("impact")),
-                )
-            )
-
-        field_mapping = FieldMapping(
-            program_name=state.program_name,
-            criteria_can_evaluate=criteria_can_evaluate,
-            criteria_cannot_evaluate=criteria_cannot_evaluate,
-            summary=data.get("summary", ""),
-            recommendations=data.get("recommendations", []),
-        )
+        data = json.loads(extract_json_block(response_text))
+        field_mapping = build_field_mapping(state.program_name, data)
 
         messages.append(
-            f"Extracted {len(criteria_can_evaluate)} evaluable criteria, "
-            f"{len(criteria_cannot_evaluate)} data gaps"
+            f"Extracted {len(field_mapping.criteria_can_evaluate)} evaluable criteria, "
+            f"{len(field_mapping.criteria_cannot_evaluate)} data gaps"
         )
         messages.append(f"Summary: {field_mapping.summary}")
 

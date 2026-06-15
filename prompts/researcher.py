@@ -441,6 +441,59 @@ Return the corrected version of the output in the same format, with all issues a
 If an issue cannot be fully addressed, note why in a `_fix_notes` field.
 """
 
+FIX_RESEARCH_PROMPT = """## Task: Fix Eligibility Criteria / Field Mapping
+
+A QA reviewer has flagged issues with the current field mapping. Apply the fixes
+and return the corrected mapping.
+
+### Current Field Mapping (JSON)
+{current_output}
+
+### QA Issues to Address
+{qa_issues}
+
+### Instructions
+1. Address every issue listed above, applying the suggested fix where it is correct.
+2. Make ONLY the changes needed to resolve the issues — preserve all other criteria,
+   wording, source references, and ordering exactly as-is.
+3. If an issue is invalid or cannot be resolved from the available information, leave
+   that content unchanged (the next QA pass will re-flag it if needed).
+4. Keep each criterion in the correct list: `criteria_can_evaluate` (mappable to one or
+   more screener fields) vs. `criteria_cannot_evaluate` (data gaps, no screener field).
+
+### Output
+Return ONLY a JSON object in EXACTLY this schema (same as the extraction step), wrapped
+in a ```json fenced block:
+```json
+{{
+  "criteria_can_evaluate": [
+    {{
+      "criterion": "Plain-language requirement",
+      "source_reference": "Citation (e.g. '7 CFR 247.9(a)')",
+      "source_url": "https://... or null",
+      "screener_fields": ["field_name", "..."],
+      "evaluation_logic": "How to evaluate (e.g. 'member.age >= 60')",
+      "notes": "Optional notes",
+      "impact": "low|medium|high"
+    }}
+  ],
+  "criteria_cannot_evaluate": [
+    {{
+      "criterion": "Plain-language requirement",
+      "source_reference": "Citation",
+      "source_url": "https://... or null",
+      "notes": "Why this is a data gap",
+      "impact": "low|medium|high"
+    }}
+  ],
+  "summary": "Updated summary of mapping coverage",
+  "recommendations": ["Recommendation 1", "..."]
+}}
+```
+Return the COMPLETE mapping (all criteria, not just the changed ones), so it can fully
+replace the previous version.
+"""
+
 GENERATE_SINGLE_TEST_CASE_PROMPT = """## Task: Generate a Single Test Scenario
 
 Create ONE test scenario for the specified category.
@@ -1057,6 +1110,7 @@ RESEARCHER_PROMPTS = {
     "generate_single_test_case": GENERATE_SINGLE_TEST_CASE_PROMPT,
     "convert_to_json": CONVERT_TO_JSON_PROMPT,
     "fix_issues": FIX_ISSUES_PROMPT,
+    "fix_research": FIX_RESEARCH_PROMPT,
     "generate_program_config": GENERATE_PROGRAM_CONFIG_PROMPT,
     "generate_sources_documentation": GENERATE_SOURCES_DOCUMENTATION_PROMPT,
     "test_case_categories": TEST_CASE_CATEGORIES,
