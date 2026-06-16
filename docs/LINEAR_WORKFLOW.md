@@ -19,33 +19,33 @@ python run.py research \
 ### 2. Review Ticket or Local Output
 
 **With Linear configured:**
-- Ticket created at: `https://linear.app/mfb/issue/LIN-1234`
+- Ticket created at: `https://linear.app/myfriendben/issue/MFB-1234`
 - Review eligibility criteria, test cases, and program config
 
 **Without Linear configured:**
-- Files saved to: `output/il_CSFP_20260214_163629/ticket_content/`
+- Files saved to: `output/il_csfp_20260214_163629/ticket_content/`
 - Review locally before implementation
 
 ### 3. Implement from Ticket
 
 ```bash
 # In Claude Code
-/add-program LIN-1234
+/add-program MFB-1234
 ```
 
 Or use local files if Linear isn't configured.
 
 ## Output Structure
 
-Each research run creates a timestamped directory:
+Each research run creates a timestamped directory. File names should be both lowercase and snakecase:
 
-```
-output/il_CSFP_20260214_163629/
+```text
+output/il_csfp_20260214_163629/
 ├── ticket_content/                          ← Files for ticket/review
-│   ├── il_CSFP_initial_config.json         ← Django admin config
-│   ├── il_CSFP_test_cases.json             ← Test scenarios
-│   └── il_CSFP_ticket.md                    ← Ticket markdown
-├── SUMMARY.md                                ← Research overview
+│   ├── il_csfp_initial_config.json          ← Django admin config
+│   ├── il_csfp.json                         ← Test scenarios
+│   └── il_csfp_spec.md                      ← Ticket markdown
+├── SUMMARY.md                               ← Research overview
 ├── extract_criteria.json                    ← Detailed field mappings
 ├── generate_program_config.json             ← Config generation output
 └── workflow_log.txt                         ← Full execution log
@@ -53,7 +53,7 @@ output/il_CSFP_20260214_163629/
 
 ## What's in the Config File
 
-The `il_CSFP_initial_config.json` contains Django admin import data:
+The `il_csfp_initial_config.json` contains Django admin import data:
 
 ```json
 {
@@ -115,7 +115,7 @@ Research → Review → Implement
 ## Error Handling
 
 **Ticket not found:**
-- Verify ticket ID format (LIN-1234)
+- Verify ticket ID format (MFB-1234)
 - Check Linear access permissions
 
 **Missing research data:**
