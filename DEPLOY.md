@@ -10,7 +10,7 @@ Requires `benefits-api` and `benefits-calculator` to be checked out as sibling d
 bash bin/deploy.sh
 ```
 
-This copies `screener/models.py` and `FormData.ts` from your local sibling repos into `vendor/sibling_files/`, pushes to Heroku, then removes them from your working tree.
+This copies `screener/models.py` and `FormData.ts` from your local sibling repos into a temporary git repository, pushes that repository to Heroku, then discards it. Your local working tree is not modified.
 
 ## 2. Scale dynos (first deploy only, or if dynos were stopped)
 
