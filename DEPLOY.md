@@ -1,79 +1,28 @@
-# Deploying Program Researcher to Heroku
+# Deploying Program Researcher
 
-## 1. Create the Heroku app with buildpacks
+Assumes the app is already set up. See `SETUP.md` for first-time setup.
 
-```bash
-heroku create mfb-program-researcher --team your-team-name
-heroku buildpacks:add heroku-community/apt
-heroku buildpacks:add heroku/python
-```
+Requires `benefits-api` and `benefits-calculator` to be checked out as sibling directories.
 
-The APT buildpack installs `poppler-utils` for PDF processing. Order matters — APT must come before Python.
-
-## 2. Add Redis
-
-```bash
-heroku addons:create heroku-redis:mini
-```
-
-This sets `REDIS_URL` automatically. It powers the job queue between the web and worker dynos.
-
-## 3. Create a Gmail app password for email delivery
-
-Go to the Google Workspace admin (or the Gmail account you want to send from):
-
-1. Open [myaccount.google.com](https://myaccount.google.com) > Security > 2-Step Verification
-2. At the bottom, click **App passwords**
-3. Create one for "Mail" — you'll get a 16-character password like `abcd-efgh-ijkl-mnop`
-
-You'll use this in the next step.
-
-## 4. Set SMTP credentials
-
-```bash
-heroku config:set SMTP_USER=researcher@myfriendben.org
-heroku config:set SMTP_PASSWORD=abcd-efgh-ijkl-mnop
-heroku config:set EMAIL_FROM=researcher@myfriendben.org
-```
-
-Replace the password with the app password from step 3. `SMTP_USER` and `EMAIL_FROM` can be any Google Workspace address in your org.
-
-## 5. Set API keys and secrets
-
-```bash
-heroku config:set RESEARCH_AGENT_ANTHROPIC_API_KEY=sk-ant-...
-heroku config:set SECRET_KEY=$(openssl rand -hex 32)
-heroku config:set APP_PASSWORD=your-team-password
-```
-
-The Anthropic key is required. `APP_PASSWORD` gates access to the web form — share it with your team. Leave it blank to skip auth entirely.
-
-## 6. Set the org email list (optional)
-
-```bash
-heroku config:set ORG_EMAILS="elliott@myfriendben.org,alice@myfriendben.org"
-```
-
-This shows a dropdown on the form instead of a freeform email field. Skip this if you'd rather let people type their own.
-
-## 7. Deploy
-
-Run the deploy script from the `program-researcher` directory:
+## 1. Deploy
 
 ```bash
 bash bin/deploy.sh
+```
+
+This copies `screener/models.py` and `FormData.ts` from your local sibling repos into `vendor/sibling_files/`, pushes to Heroku, then removes them from your working tree.
+
+## 2. Scale dynos (first deploy only, or if dynos were stopped)
+
+```bash
 heroku ps:scale web=1 worker=1 --app mfb-program-researcher
 ```
 
-The script copies `screener/models.py` and `FormData.ts` from your local sibling repos (`../benefits-api` and `../benefits-calculator`) into `vendor/sibling_files/`, force-adds them for the Heroku push, then removes them from your working tree afterwards. Both `benefits-api` and `benefits-calculator` must be checked out locally for this to work.
-
-Both dynos are needed — web serves the form, worker runs the research jobs in the background.
-
-## 8. Verify
+## 3. Verify
 
 ```bash
-heroku open
-heroku logs --tail
+heroku open --app mfb-program-researcher
+heroku logs --tail --app mfb-program-researcher
 ```
 
 Open the form, submit a test run with a small program, and check your email in 5–10 minutes.

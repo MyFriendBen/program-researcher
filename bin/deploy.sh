@@ -3,6 +3,9 @@
 #
 # Run from the program-researcher directory. Expects benefits-api and
 # benefits-calculator to be checked out as siblings (../benefits-api, etc.).
+#
+# Builds a clean deploy from a temporary git repo so vendor files can be
+# included without affecting the local working tree or branch history.
 
 set -euo pipefail
 
@@ -12,7 +15,6 @@ PARENT_DIR="$(cd "$REPO_ROOT/.." && pwd)"
 
 MODELS_SRC="$PARENT_DIR/benefits-api/screener/models.py"
 TYPES_SRC="$PARENT_DIR/benefits-calculator/src/Types/FormData.ts"
-VENDOR_DIR="$REPO_ROOT/vendor/sibling_files"
 
 # Verify sibling files exist
 if [ ! -f "$MODELS_SRC" ]; then
@@ -25,22 +27,37 @@ if [ ! -f "$TYPES_SRC" ]; then
   exit 1
 fi
 
-# Copy sibling files into vendor/
-mkdir -p "$VENDOR_DIR"
-cp "$MODELS_SRC" "$VENDOR_DIR/models.py"
-cp "$TYPES_SRC" "$VENDOR_DIR/FormData.ts"
-echo "Copied sibling files to $VENDOR_DIR"
-
-# Stage and push, cleaning up vendor files afterwards
+# Ensure the heroku remote is configured in the source repo
 cd "$REPO_ROOT"
-git add --force vendor/sibling_files/
-git commit -m "chore: bundle sibling files for deploy"
-git push heroku main
+if ! git remote get-url heroku &>/dev/null; then
+  echo "Adding heroku remote..."
+  heroku git:remote --app mfb-program-researcher
+fi
+HEROKU_URL="$(git remote get-url heroku)"
 
-# Remove vendored files so they don't linger in the working tree
-git rm -r --cached vendor/sibling_files/ 2>/dev/null || true
-rm -rf "$VENDOR_DIR"
-git commit -m "chore: remove vendored sibling files post-deploy"
+# Create a temp dir with a fresh git repo
+DEPLOY_DIR="$(mktemp -d)"
+trap "rm -rf '$DEPLOY_DIR'" EXIT
+
+echo "Building deploy in $DEPLOY_DIR ..."
+
+# Copy the repo into the temp dir (excluding .git and vendor/sibling_files)
+rsync -a --exclude='.git' --exclude='vendor/sibling_files' "$REPO_ROOT/" "$DEPLOY_DIR/"
+
+# Copy sibling files in (no gitignore to worry about in the fresh repo)
+mkdir -p "$DEPLOY_DIR/vendor/sibling_files"
+cp "$MODELS_SRC" "$DEPLOY_DIR/vendor/sibling_files/models.py"
+cp "$TYPES_SRC" "$DEPLOY_DIR/vendor/sibling_files/FormData.ts"
+
+# Remove the vendor/sibling_files gitignore entry so git tracks them
+sed -i '' '/vendor\/sibling_files/d' "$DEPLOY_DIR/.gitignore"
+
+# Commit everything in the temp repo and push to Heroku
+git -C "$DEPLOY_DIR" init -b main
+git -C "$DEPLOY_DIR" add .
+git -C "$DEPLOY_DIR" commit -m "deploy"
+git -C "$DEPLOY_DIR" remote add heroku "$HEROKU_URL"
+git -C "$DEPLOY_DIR" push heroku main --force
 
 echo ""
 echo "Deploy complete. Scale dynos if needed:"
