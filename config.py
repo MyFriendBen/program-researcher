@@ -78,12 +78,22 @@ class Settings(BaseSettings):
     )
 
     # ----- Backend Paths (for reading screener fields) -----
+    # Locally these resolve to sibling repos. On Heroku, bin/deploy.sh copies
+    # them into vendor/sibling_files/ before pushing so the slug contains them.
     backend_models_path: Path = Field(
-        default=Path(__file__).parent.parent / "benefits-api" / "screener" / "models.py",
+        default=(
+            Path(__file__).parent.parent / "benefits-api" / "screener" / "models.py"
+            if (Path(__file__).parent.parent / "benefits-api" / "screener" / "models.py").exists()
+            else Path(__file__).parent / "vendor" / "sibling_files" / "models.py"
+        ),
         description="Path to Django screener models",
     )
     frontend_types_path: Path = Field(
-        default=Path(__file__).parent.parent / "benefits-calculator" / "src" / "Types" / "FormData.ts",
+        default=(
+            Path(__file__).parent.parent / "benefits-calculator" / "src" / "Types" / "FormData.ts"
+            if (Path(__file__).parent.parent / "benefits-calculator" / "src" / "Types" / "FormData.ts").exists()
+            else Path(__file__).parent / "vendor" / "sibling_files" / "FormData.ts"
+        ),
         description="Path to frontend type definitions",
     )
 

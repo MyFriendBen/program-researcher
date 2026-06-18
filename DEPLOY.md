@@ -58,10 +58,14 @@ This shows a dropdown on the form instead of a freeform email field. Skip this i
 
 ## 7. Deploy
 
+Run the deploy script from the `program-researcher` directory:
+
 ```bash
-git push heroku main
-heroku ps:scale web=1 worker=1
+bash bin/deploy.sh
+heroku ps:scale web=1 worker=1 --app mfb-program-researcher
 ```
+
+The script copies `screener/models.py` and `FormData.ts` from your local sibling repos (`../benefits-api` and `../benefits-calculator`) into `vendor/sibling_files/`, force-adds them for the Heroku push, then removes them from your working tree afterwards. Both `benefits-api` and `benefits-calculator` must be checked out locally for this to work.
 
 Both dynos are needed — web serves the form, worker runs the research jobs in the background.
 
