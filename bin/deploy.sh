@@ -49,12 +49,10 @@ mkdir -p "$DEPLOY_DIR/vendor/sibling_files"
 cp "$MODELS_SRC" "$DEPLOY_DIR/vendor/sibling_files/models.py"
 cp "$TYPES_SRC" "$DEPLOY_DIR/vendor/sibling_files/FormData.ts"
 
-# Remove the vendor/sibling_files gitignore entry so git tracks them
-sed -i '' '/vendor\/sibling_files/d' "$DEPLOY_DIR/.gitignore"
-
 # Commit everything in the temp repo and push to Heroku
 git -C "$DEPLOY_DIR" init -b main
 git -C "$DEPLOY_DIR" add .
+git -C "$DEPLOY_DIR" add -f vendor/sibling_files
 git -C "$DEPLOY_DIR" commit -m "deploy"
 git -C "$DEPLOY_DIR" remote add heroku "$HEROKU_URL"
 git -C "$DEPLOY_DIR" push heroku main --force
