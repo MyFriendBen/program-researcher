@@ -61,5 +61,6 @@ Thumbs.db
 # (Use these to inform PRs but don't commit them)
 working/
 
-# Sibling repo files fetched at boot (see bin/fetch_sibling_files.sh)
+# Sibling repo files copied at deploy time (see bin/deploy.sh)
+# Not committed normally — deploy.sh force-adds them only for the Heroku push.
 vendor/sibling_files/
