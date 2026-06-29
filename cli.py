@@ -56,14 +56,14 @@ console = Console()
 @click.option(
     "--tier",
     type=click.Choice(
-        ["as-is", "value", "eligibility", "elig+value", "state-calc"],
+        ["as-is", "value", "elig", "elig+value", "state"],
         case_sensitive=False,
     ),
     default=None,
     help=(
-        "Decision: Tier tag from the ticket. Shapes test-scenario coverage: "
+        "Calculator Tier label from the ticket. Shapes test-scenario coverage: "
         "'value' = light spec isolating the state value; "
-        "'eligibility'/'elig+value'/'state-calc' = full spec covering all branches; "
+        "'elig'/'elig+value'/'state' = full spec covering all branches; "
         "'as-is' = config only (no spec)."
     ),
 )
