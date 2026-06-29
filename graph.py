@@ -281,6 +281,8 @@ async def run_research(
     max_iterations: int = 3,
     thread_id: str | None = None,
     save_outputs: bool = True,
+    engine: str | None = None,
+    tier: str | None = None,
 ) -> ResearchState:
     """
     Run the full research workflow for a program.
@@ -310,6 +312,8 @@ async def run_research(
         white_label=white_label,
         source_urls=source_urls,
         max_iterations=max_iterations,
+        engine=engine,
+        tier=tier,
         messages=[f"Starting research for {program_name} ({state_code})..."],
         output_dir=str(output_dir) if output_dir else None,
     )

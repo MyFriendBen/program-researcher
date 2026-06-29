@@ -93,6 +93,10 @@ def submit():
     if email == "_other":
         email = request.form.get("email_other", "").strip()
 
+    # Decision tags from the ticket (optional)
+    engine = (request.form.get("engine", "").strip() or None)
+    tier = (request.form.get("tier", "").strip() or None)
+
     # Collect source URLs (up to 5 fields, skip blanks)
     source_urls = [
         url.strip()
@@ -115,6 +119,8 @@ def submit():
         white_label=white_label,
         source_urls=source_urls,
         email=email,
+        engine=engine,
+        tier=tier,
         job_timeout="30m",  # research can take a while
     )
 

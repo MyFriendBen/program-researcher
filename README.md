@@ -185,10 +185,9 @@ Each research run creates a timestamped directory:
 ```
 output/
 └── il_csfp_20240115_143022/            # Timestamped run directory
-    ├── ticket_content/                  # Files for ticket/review
+    ├── ticket_content/                  # Files for ticket/review (config + spec)
     │   ├── il_csfp_initial_config.json # Django admin config
-    │   ├── il_csfp_test_cases.json     # JSON test cases
-    │   └── il_csfp_ticket.md            # Ticket markdown
+    │   └── il_csfp_ticket.md            # Ticket markdown / spec (Test Scenarios live here)
     ├── SUMMARY.md                       # High-level summary with metrics
     ├── workflow_log.txt                 # Complete execution log
     ├── gather_links.json                # Link catalog
