@@ -231,7 +231,7 @@ def create_research_graph() -> StateGraph:
         should_fix_json,
         {
             "fix_json": "fix_json",
-            "create_ticket": "generate_program_config",  # Changed: go to config generation first
+            "create_ticket": "generate_program_config",  # config generation runs before ticket creation
         },
     )
     workflow.add_edge("fix_json", "qa_validate_json")  # Loop back

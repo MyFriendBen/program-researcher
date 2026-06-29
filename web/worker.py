@@ -55,12 +55,10 @@ def send_results_email(
     if status == "completed":
         body = (
             f"Research for {program.upper()} ({state_code.upper()}) finished successfully.\n\n"
-            f"The two draft artifacts are attached:\n"
+            f"The draft artifacts are attached:\n"
             f"  - initial_config.json  (program config)\n"
-            f"  - ticket.md            (ticket summary / spec)\n\n"
-            f"Post these to the program's Linear ticket as described in the runbook.\n"
-            f"(We no longer produce a separate validation test_cases.json — the spec.md\n"
-            f"Test Scenarios are the single source of truth.)\n\n"
+            f"  - ticket.md            (ticket summary / spec; Test Scenarios live here)\n\n"
+            f"Post these to the program's Linear ticket as described in the runbook.\n\n"
             f"---\n\n"
             f"{summary}"
         )

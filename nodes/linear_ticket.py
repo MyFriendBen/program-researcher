@@ -41,9 +41,8 @@ async def create_linear_ticket_node(state: ResearchState) -> dict:
     if not state.test_suite or not state.test_suite.test_cases:
         validation_errors.append("Missing test cases - test generation may have failed")
 
-    # NOTE: json_test_cases (the importable {wl}_{program}.json validation artifact) is
-    # intentionally NOT required. We no longer emit a separate validation-test-case file —
-    # the spec.md Test Scenarios are the single source of truth (see the Discovery docs).
+    # The spec.md Test Scenarios are the source of truth for test coverage, so
+    # json_test_cases is not required to create the ticket.
 
     if validation_errors:
         messages.append("Validation failed - cannot create complete ticket:")
@@ -62,8 +61,8 @@ async def create_linear_ticket_node(state: ResearchState) -> dict:
     # Build ticket content
     ticket_content = build_ticket_content(state)
 
-    # NOTE: We no longer save the importable {wl}_{program}.json validation artifact.
-    # The spec.md Test Scenarios are the single source of truth (see the Discovery docs).
+    # The ticket deliverables are the config and the spec.md (whose Test Scenarios
+    # section is the source of truth for test coverage).
     json_file_path = None
 
     # Save program config to file
