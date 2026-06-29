@@ -63,21 +63,21 @@ class Engine(str, Enum):
 
 class Tier(str, Enum):
     """
-    Short tier code mirroring the ticket's Decision: Tier tag (and the Decision: Tier
-    column in the program spreadsheet). Maps to the full sheet names:
+    Short tier code matching the ticket's Calculator Tier label (and the Decision: Tier
+    column in the program spreadsheet). Each code maps to a Linear label:
 
-      as-is       -> "Federal calc (as-is)"                         (no spec)
-      value       -> "Federal calc + {state} value params"          (light spec; isolate the value)
-      eligibility -> "Federal calc + {state} eligibility params"     (full spec)
-      elig+value  -> "Federal calc + {state} eligibility + value params" (full spec)
-      state-calc  -> "State calc ({state})"                         (full spec)
+      as-is       -> "Fed (as-is)"                 (no spec)
+      value       -> "Fed (value varies)"          (light spec; isolate the value)
+      elig        -> "Fed (elig varies)"           (full spec)
+      elig+value  -> "Fed (elig + value varies)"   (full spec)
+      state       -> "State (custom)"              (full spec)
     """
 
     AS_IS = "as-is"
     VALUE = "value"
-    ELIGIBILITY = "eligibility"
+    ELIG = "elig"
     ELIG_VALUE = "elig+value"
-    STATE_CALC = "state-calc"
+    STATE = "state"
 
 
 # Tier -> what varies for our state (the Δ), used to shape test-scenario generation.
@@ -87,9 +87,9 @@ class Tier(str, Enum):
 TIER_VARIANCE: dict[str, str] = {
     Tier.AS_IS.value: "none",
     Tier.VALUE.value: "value",
-    Tier.ELIGIBILITY.value: "elig",
+    Tier.ELIG.value: "elig",
     Tier.ELIG_VALUE.value: "elig",
-    Tier.STATE_CALC.value: "elig",
+    Tier.STATE.value: "elig",
 }
 
 
