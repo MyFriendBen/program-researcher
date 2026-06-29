@@ -55,10 +55,9 @@ def send_results_email(
     if status == "completed":
         body = (
             f"Research for {program.upper()} ({state_code.upper()}) finished successfully.\n\n"
-            f"The three draft artifacts are attached:\n"
+            f"The draft artifacts are attached:\n"
             f"  - initial_config.json  (program config)\n"
-            f"  - test_cases.json      (JSON test cases)\n"
-            f"  - ticket.md            (ticket summary)\n\n"
+            f"  - ticket.md            (ticket summary / spec; Test Scenarios live here)\n\n"
             f"Post these to the program's Linear ticket as described in the runbook.\n\n"
             f"---\n\n"
             f"{summary}"
@@ -73,7 +72,7 @@ def send_results_email(
 
     msg.attach(MIMEText(body, "plain"))
 
-    # Attach files from ticket_content/ directory (the three key deliverables)
+    # Attach files from ticket_content/ directory (config + spec/ticket deliverables)
     ticket_dir = output_dir / "ticket_content"
     attached_count = 0
 
@@ -125,6 +124,8 @@ def run_research_job(
     white_label: str,
     source_urls: list[str],
     email: str,
+    engine: str | None = None,
+    tier: str | None = None,
 ) -> dict:
     """
     Execute a research run and email the results.
@@ -160,6 +161,8 @@ def run_research_job(
                 white_label=white_label,
                 source_urls=source_urls,
                 save_outputs=True,
+                engine=engine,
+                tier=tier,
             )
         )
 

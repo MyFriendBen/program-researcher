@@ -38,6 +38,34 @@
   </div>
 
   <div class="card">
+    <label>Decision tags (from the Linear ticket)</label>
+    <div class="hint">Match the ticket's Decision: Engine and Decision: Tier tags. Shapes how test scenarios are built.</div>
+    <div class="row">
+      <div>
+        <label for="engine">Engine</label>
+        <select id="engine" name="engine"
+                style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;background:#fff;">
+          <option value="">(not specified)</option>
+          <option value="PE" {{ 'selected' if form and form.engine == 'PE' else '' }}>PE</option>
+          <option value="MFB" {{ 'selected' if form and form.engine == 'MFB' else '' }}>MFB</option>
+        </select>
+      </div>
+      <div>
+        <label for="tier">Tier</label>
+        <select id="tier" name="tier"
+                style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;background:#fff;">
+          <option value="">(not specified)</option>
+          <option value="as-is" {{ 'selected' if form and form.tier == 'as-is' else '' }}>as-is (config only)</option>
+          <option value="value" {{ 'selected' if form and form.tier == 'value' else '' }}>value (light spec)</option>
+          <option value="eligibility" {{ 'selected' if form and form.tier == 'eligibility' else '' }}>eligibility (full spec)</option>
+          <option value="elig+value" {{ 'selected' if form and form.tier == 'elig+value' else '' }}>elig+value (full spec)</option>
+          <option value="state-calc" {{ 'selected' if form and form.tier == 'state-calc' else '' }}>state-calc (full spec)</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
     <label for="email">Send results to</label>
     <div class="hint">You'll get the output files emailed when the run finishes.</div>
     {% if org_emails %}

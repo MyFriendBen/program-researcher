@@ -41,8 +41,8 @@ async def create_linear_ticket_node(state: ResearchState) -> dict:
     if not state.test_suite or not state.test_suite.test_cases:
         validation_errors.append("Missing test cases - test generation may have failed")
 
-    if not state.json_test_cases:
-        validation_errors.append("Missing JSON test cases - JSON conversion may have failed")
+    # The spec.md Test Scenarios are the source of truth for test coverage, so
+    # json_test_cases is not required to create the ticket.
 
     if validation_errors:
         messages.append("Validation failed - cannot create complete ticket:")
@@ -61,11 +61,9 @@ async def create_linear_ticket_node(state: ResearchState) -> dict:
     # Build ticket content
     ticket_content = build_ticket_content(state)
 
-    # Save JSON test cases to file
+    # The ticket deliverables are the config and the spec.md (whose Test Scenarios
+    # section is the source of truth for test coverage).
     json_file_path = None
-    if state.json_test_cases:
-        json_file_path = save_json_test_cases(state)
-        messages.append(f"Saved JSON test cases to {json_file_path}")
 
     # Save program config to file
     config_file_path = None

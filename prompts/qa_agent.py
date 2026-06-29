@@ -73,12 +73,15 @@ For each item in the field mapping, determine:
 2. **Criteria Extraction**:
    - Are ALL eligibility criteria captured?
    - Are source citations accurate?
+   - **Source recency + fidelity**: is each cited source the CURRENT year's, AND does it actually state the claimed number? Flag any rate/threshold that lacks a verbatim quote of the operative sentence from the source.
    - Are thresholds correct (exact FPL percentages, age limits)?
 
 3. **Field Mapping**:
    - Do the screener fields actually exist?
    - Is the evaluation logic correct?
    - Are data gaps correctly identified?
+   - **Immigration/citizenship status must NOT be a data gap** — it's handled via `legal_status_required`. Flag it if it appears in `criteria_cannot_evaluate`.
+   - **Inclusive default**: for un-screenable rules, is the check excluded (assume pass) rather than applied as an exclusionary cutoff? Flag any conservative cutoff that would wrongly exclude likely-eligible households.
    - Are impact assessments reasonable?
 
 ### Output Format
@@ -149,6 +152,7 @@ Review the test scenarios for completeness and correctness.
 4. **Logic Check**: Are expected outcomes correct?
    - Would this household actually qualify based on criteria?
    - Are benefit amounts reasonable?
+   - **Every ELIGIBLE scenario MUST have a committed numeric expected amount** (not null, not "varies", not a placeholder/"verify with PE"). Flag any eligible scenario missing a numeric value. Ineligible scenarios carry no amount.
 
 ### Specific Validations
 

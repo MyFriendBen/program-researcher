@@ -54,6 +54,45 @@ class WorkflowStatus(str, Enum):
     AWAITING_INPUT = "awaiting_input"
 
 
+class Engine(str, Enum):
+    """Which calculation engine we build the program on (mirrors the ticket's Decision: Engine tag)."""
+
+    PE = "PE"
+    MFB = "MFB"
+
+
+class Tier(str, Enum):
+    """
+    Short tier code mirroring the ticket's Decision: Tier tag (and the Decision: Tier
+    column in the program spreadsheet). Maps to the full sheet names:
+
+      as-is       -> "Federal calc (as-is)"                         (no spec)
+      value       -> "Federal calc + {state} value params"          (light spec; isolate the value)
+      eligibility -> "Federal calc + {state} eligibility params"     (full spec)
+      elig+value  -> "Federal calc + {state} eligibility + value params" (full spec)
+      state-calc  -> "State calc ({state})"                         (full spec)
+    """
+
+    AS_IS = "as-is"
+    VALUE = "value"
+    ELIGIBILITY = "eligibility"
+    ELIG_VALUE = "elig+value"
+    STATE_CALC = "state-calc"
+
+
+# Tier -> what varies for our state (the Δ), used to shape test-scenario generation.
+#   "none"   -> nothing varies (no spec normally)
+#   "value"  -> only the benefit value varies (light spec: isolate the value)
+#   "elig"   -> eligibility varies (full spec: cover every branch)
+TIER_VARIANCE: dict[str, str] = {
+    Tier.AS_IS.value: "none",
+    Tier.VALUE.value: "value",
+    Tier.ELIGIBILITY.value: "elig",
+    Tier.ELIG_VALUE.value: "elig",
+    Tier.STATE_CALC.value: "elig",
+}
+
+
 # -----------------------------------------------------------------------------
 # Step 1: Link Catalog Models
 # -----------------------------------------------------------------------------
@@ -420,6 +459,14 @@ class ResearchState(BaseModel):
     state_code: str = Field(description="State code (e.g., 'il', 'co', 'nc')")
     white_label: str = Field(description="White label identifier")
     source_urls: list[str] = Field(description="Source documentation URLs provided by user")
+    engine: Engine | None = Field(
+        default=None,
+        description="Decision: Engine tag from the ticket (PE or MFB). Shapes how scenarios are verified downstream.",
+    )
+    tier: Tier | None = Field(
+        default=None,
+        description="Decision: Tier tag from the ticket. Shapes test-scenario coverage (value-isolating vs full).",
+    )
 
     # ----- Step 1: Link Discovery -----
     link_catalog: LinkCatalog | None = Field(default=None)

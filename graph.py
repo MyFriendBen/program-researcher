@@ -231,7 +231,7 @@ def create_research_graph() -> StateGraph:
         should_fix_json,
         {
             "fix_json": "fix_json",
-            "create_ticket": "generate_program_config",  # Changed: go to config generation first
+            "create_ticket": "generate_program_config",  # config generation runs before ticket creation
         },
     )
     workflow.add_edge("fix_json", "qa_validate_json")  # Loop back
@@ -281,6 +281,8 @@ async def run_research(
     max_iterations: int = 3,
     thread_id: str | None = None,
     save_outputs: bool = True,
+    engine: str | None = None,
+    tier: str | None = None,
 ) -> ResearchState:
     """
     Run the full research workflow for a program.
@@ -310,6 +312,8 @@ async def run_research(
         white_label=white_label,
         source_urls=source_urls,
         max_iterations=max_iterations,
+        engine=engine,
+        tier=tier,
         messages=[f"Starting research for {program_name} ({state_code})..."],
         output_dir=str(output_dir) if output_dir else None,
     )

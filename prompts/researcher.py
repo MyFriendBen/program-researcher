@@ -24,6 +24,10 @@ SYSTEM_PROMPT = """You are a benefits program researcher specializing in governm
 
 5. **Document Everything**: Every claim should have a source citation. If you can't find a source, say so.
 
+6. **Source check = recency AND fidelity**: A citation being present is not enough. (a) *Recency* — confirm the cited source is the CURRENT year's (catch stale links like an old tax form). (b) *Fidelity* — confirm the document actually STATES the number you're claiming. For every rate/threshold, **quote the operative sentence from the source verbatim** next to the number so a reviewer can check the number against the quote at a glance. (A real failure: a correct, current notice was cited for a credit rate, but the spec stated the "prior to amendment" sentence's number instead of the operative one.)
+
+7. **Default to inclusive, never conservative**: For any real eligibility rule we CANNOT screen (no matching screener field), do NOT apply it as an exclusionary cutoff — that turns away likely-eligible people. Exclude the check (assume the household passes it) and surface the nuance in the program description / a warning message instead. Over-include-and-explain; never silently exclude. (A real failure: a $2,000 asset limit was applied to married couples and wrongly excluded eligible couples — the fix was to NOT asset-gate and explain via a warning.)
+
 ## Output Standards
 
 - Use markdown formatting for structured output
@@ -127,6 +131,11 @@ Analyze the program documentation to extract all eligibility criteria and map th
    - Age requirements (minimum, maximum, ranges)
    - Categorical requirements (children, elderly, disabled, pregnant)
    - Citizenship/immigration status requirements (be specific - if source says "NA" or unclear, note that)
+     - **Immigration/citizenship status is NEVER a data gap.** Although the screener has no
+       ordinary "immigration status" eligibility field, the program filters on it via the
+       config's `legal_status_required`. So an immigration/citizenship requirement is
+       CONFIGURABLE, not unverifiable — capture the requirement here and let it drive
+       `legal_status_required` in the config. Do NOT put it in `criteria_cannot_evaluate`.
    - Residency requirements (state, county, minimum duration)
    - **Preference/priority criteria** (e.g., "preference for households with children")
      - **For PDFs: Use WebFetch to search for "PREFERENCE POINTS" or "PRIORITY" sections**
@@ -456,6 +465,8 @@ Example: a 65-year-old born in March when today is February 2026 → birth_year 
 - **Scenario Number**: {scenario_number}
 - **Description**: {category_description}
 
+{variance_directive}
+
 ### Previously Generated Scenarios
 {previous_scenarios}
 
@@ -469,7 +480,7 @@ Return a JSON object for this SINGLE test case:
   "what_checking": "What this specific test validates",
   "category": "{category}",
   "expected_eligible": true|false,
-  "expected_amount": null or number,
+  "expected_amount": number (REQUIRED when expected_eligible is true) or null (only when ineligible),
   "expected_time": "15 minutes",
   "steps": [
     {{
@@ -515,6 +526,8 @@ Return a JSON object for this SINGLE test case:
 - Use realistic values based on current FPL and program thresholds
 - Ensure the scenario is DIFFERENT from previously generated ones
 - Make sure to test the specific aspect described in the category description
+- **Every eligible scenario MUST state a committed numeric `expected_amount`** (a single number, computed from the benefit-value methodology applied to this household) — never null, "varies", "~$X", "TBD", or "verify with PE" when eligible. `expected_amount` is null ONLY for ineligible scenarios.
+- **No placeholders or forks** in any expected field: a single committed answer, not "X (recommended)… or Y…" or "Team to decide".
 - **County format**: For TX and IL, use county name WITHOUT "County" suffix (e.g., `"Travis"`, `"Collin"`, `"Cook"`). For CO and NC, INCLUDE "County" suffix (e.g., `"Denver County"`, `"Wake County"`). For MA, use city names (e.g., `"Boston"`).
 """
 
@@ -610,6 +623,17 @@ Generate a JSON configuration matching this format:
 
 ### Field-by-Field Instructions
 
+**Shared entities — confirm-or-define (applies to program_category, documents, navigators, warning_message)**:
+Each of these is referenced by an `external_name`. For EVERY such reference you must either
+(1) reference an entity that ALREADY EXISTS (then `external_name` alone is enough), or
+(2) FULLY DEFINE a new entity inline in the config. Never reference an `external_name` for an
+entity that doesn't exist yet without defining it — the import does a find-or-create and will
+**fail at import time** if a referenced entity is missing its definition. (Real failure: a config
+referenced `program_category: {{"external_name": "ks_healthcare"}}` with no name/icon, the category
+didn't exist, and the import errored: "Program category 'ks_healthcare' does not exist. To create a
+new category, provide: icon, name.") A NEW `program_category` MUST include `name` AND `icon` (not just
+`external_name`); a new navigator MUST include name/email/etc. Do not assume "someone else will create it."
+
 **program_category.external_name**:
 - Determine category from program type:
   - Food programs → "{white_label}_food"
@@ -618,6 +642,7 @@ Generate a JSON configuration matching this format:
   - Housing → "{white_label}_housing"
   - Childcare → "{white_label}_childcare"
   - Cash assistance → "{white_label}_cash"
+- If this category may not already exist for the white label, include `name` and `icon` so the import can create it.
 
 **program.name_abbreviated**:
 - Format: `{white_label}_{program_name}` converted to snake_case
@@ -639,6 +664,8 @@ Generate a JSON configuration matching this format:
 
 **program.description**:
 - **Do NOT include specific dollar amounts or income thresholds** — these change year to year and are hard to maintain
+- **NEVER include legal citations or statute/regulation numbers** (no "per K.S.A. § 79-32,205", no "7 CFR 247.9", no "U.S.C."). Citations belong in the spec.md sources, never in user-facing copy.
+- **The "how to apply" closing must funnel to the apply button** — describe the SINGLE primary action the apply button performs (e.g. "To apply, file Form K-40 using Kansas WebFile"). A phone-number alternative is fine, but do NOT list other websites or a chain of things to go research/do — that sends users away from the one action we surface.
 - **REQUIRED: 8th grade reading level or below** (Flesch-Kincaid Grade Level ≤ 8)
 - Write 2 short paragraphs (100-150 words total)
 - **Max sentence length: 20 words. If a sentence is longer, split it.**
@@ -750,6 +777,7 @@ Families with low income can apply. Children who get SNAP (food stamps) or TANF 
 5. Double-check JSON syntax (commas, quotes, brackets)
 6. **DO NOT use abbreviations or placeholder text** - use actual research data
 7. **Descriptions must be complete** - not truncated or abbreviated
+8. **No unresolved placeholders or forks in any binding field** - never "verify with PE", "~$X (estimate)", "TBD", "Team to decide", "⚠️ … needed", or an "X (recommended)… or Y…" fork. Every value/threshold/expected field holds a single committed answer. If a value is genuinely undecided, that question must be resolved before the artifact is produced — do not emit a deferral.
 
 ### Quality Checklist
 
@@ -767,6 +795,10 @@ Before returning, verify:
 - [ ] Benefit value is calculated/estimated when possible (not left empty if calculable)
 - [ ] Asset limits extracted if mentioned (especially check application PDFs)
 - [ ] Navigators researched and populated if any navigator/local assistance links were found
+- [ ] `description` contains NO legal citations / statute numbers and NO dollar amounts or thresholds
+- [ ] `description`'s how-to-apply funnels to the apply button (one primary action), not a list of other sites
+- [ ] Any new program_category includes `name` + `icon` (and any new navigator is fully defined) — no reference-only entities that don't already exist
+- [ ] No placeholders/forks in any field (no "verify with PE" / "TBD" / "Team to decide" / "recommended… or…")
 
 Return the complete JSON configuration now:
 """

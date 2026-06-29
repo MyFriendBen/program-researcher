@@ -48,6 +48,26 @@ console = Console()
     help="Source documentation URL (can specify multiple)",
 )
 @click.option(
+    "--engine",
+    type=click.Choice(["PE", "MFB"], case_sensitive=False),
+    default=None,
+    help="Decision: Engine tag from the ticket (PE or MFB).",
+)
+@click.option(
+    "--tier",
+    type=click.Choice(
+        ["as-is", "value", "eligibility", "elig+value", "state-calc"],
+        case_sensitive=False,
+    ),
+    default=None,
+    help=(
+        "Decision: Tier tag from the ticket. Shapes test-scenario coverage: "
+        "'value' = light spec isolating the state value; "
+        "'eligibility'/'elig+value'/'state-calc' = full spec covering all branches; "
+        "'as-is' = config only (no spec)."
+    ),
+)
+@click.option(
     "--max-iterations",
     default=3,
     help="Maximum QA loop iterations (default: 3)",
@@ -77,6 +97,8 @@ def research_program(
     state: str,
     white_label: str,
     source_url: tuple,
+    engine: str | None,
+    tier: str | None,
     max_iterations: int,
     output_dir: str | None,
     dry_run: bool,
@@ -107,12 +129,18 @@ def research_program(
     if output_dir:
         settings.output_dir = Path(output_dir)
 
+    # Normalize tag inputs to the canonical casing used by the Engine/Tier enums
+    engine = engine.upper() if engine else None
+    tier = tier.lower() if tier else None
+
     # Show configuration
     console.print(Panel.fit(
         f"[bold]Program Research Agent[/bold]\n\n"
         f"Program: {program}\n"
         f"State: {state.upper()}\n"
         f"White Label: {white_label}\n"
+        f"Engine: {engine or '(not specified)'}\n"
+        f"Tier: {tier or '(not specified)'}\n"
         f"Source URLs: {len(source_url)}\n"
         f"Max QA Iterations: {max_iterations}",
         title="Configuration",
@@ -140,6 +168,8 @@ def research_program(
                 source_urls=list(source_url),
                 max_iterations=max_iterations,
                 save_outputs=not no_save,
+                engine=engine,
+                tier=tier,
             )
         )
 
