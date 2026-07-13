@@ -55,11 +55,11 @@
         <select id="tier" name="tier"
                 style="width:100%;padding:0.5rem 0.75rem;border:1px solid var(--border);border-radius:6px;font-size:0.95rem;background:#fff;">
           <option value="">(not specified)</option>
-          <option value="as-is" {{ 'selected' if form and form.tier == 'as-is' else '' }}>as-is (config only)</option>
-          <option value="value" {{ 'selected' if form and form.tier == 'value' else '' }}>value (light spec)</option>
-          <option value="eligibility" {{ 'selected' if form and form.tier == 'eligibility' else '' }}>eligibility (full spec)</option>
-          <option value="elig+value" {{ 'selected' if form and form.tier == 'elig+value' else '' }}>elig+value (full spec)</option>
-          <option value="state-calc" {{ 'selected' if form and form.tier == 'state-calc' else '' }}>state-calc (full spec)</option>
+          <option value="as-is" {{ 'selected' if form and form.tier == 'as-is' else '' }}>Fed (as-is) — config only</option>
+          <option value="value" {{ 'selected' if form and form.tier == 'value' else '' }}>Fed (value varies) — light spec</option>
+          <option value="elig" {{ 'selected' if form and form.tier == 'elig' else '' }}>Fed (elig varies) — full spec</option>
+          <option value="elig+value" {{ 'selected' if form and form.tier == 'elig+value' else '' }}>Fed (elig + value varies) — full spec</option>
+          <option value="state" {{ 'selected' if form and form.tier == 'state' else '' }}>State (custom) — full spec</option>
         </select>
       </div>
     </div>

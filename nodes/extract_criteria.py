@@ -7,7 +7,7 @@ Step 3 of the QA process - extract eligibility criteria and map to screener fiel
 import json
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
 from ..config import settings
 from ..prompts.researcher import RESEARCHER_PROMPTS
@@ -19,6 +19,83 @@ from ..state import (
 )
 from ..tools.screener_fields import format_fields_for_prompt
 from ..tools.vision_helper import is_pdf_vision_content
+
+
+def extract_json_payload(response_text: str) -> str:
+    """Best-effort extraction of a JSON object from an LLM response.
+
+    Handles ```json fences, bare ``` fences, and prose wrapped around the JSON by
+    falling back to the outermost { ... } span.
+    """
+    text = (response_text or "").strip()
+    if "```json" in text:
+        text = text.split("```json", 1)[1].split("```", 1)[0]
+    elif "```" in text:
+        text = text.split("```", 1)[1].split("```", 1)[0]
+    text = text.strip()
+    if not text.startswith("{"):
+        start = text.find("{")
+        end = text.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            text = text[start : end + 1]
+    return text
+
+
+def parse_field_mapping(response_text: str, program_name: str) -> FieldMapping:
+    """Parse the extraction LLM response into a FieldMapping.
+
+    Raises json.JSONDecodeError / ValueError / TypeError on unusable responses so
+    the caller can retry or fail loudly instead of returning an empty mapping.
+    """
+    data = json.loads(extract_json_payload(response_text))
+    if not isinstance(data, dict):
+        raise ValueError("Extraction response was not a JSON object")
+
+    # Map lower-cased value -> enum so case variants ("high", "HIGH") resolve
+    # correctly (the model emits lowercase; enum values are title-case).
+    impact_by_value = {level.value.lower(): level for level in ImpactLevel}
+
+    def parse_impact(value) -> ImpactLevel:
+        normalized = value.strip().lower() if isinstance(value, str) else None
+        return impact_by_value.get(normalized, ImpactLevel.MEDIUM)
+
+    def build(items, is_gap: bool) -> list[EligibilityCriterion]:
+        return [
+            EligibilityCriterion(
+                criterion=item.get("criterion", ""),
+                source_reference=item.get("source_reference", ""),
+                source_url=item.get("source_url"),
+                # Data gaps have no screener field / evaluation logic by definition.
+                screener_fields=None if is_gap else item.get("screener_fields"),
+                evaluation_logic=None if is_gap else item.get("evaluation_logic"),
+                notes=item.get("notes", ""),
+                impact=parse_impact(item.get("impact")),
+            )
+            for item in (items or [])
+            if isinstance(item, dict)
+        ]
+
+    return FieldMapping(
+        program_name=program_name,
+        criteria_can_evaluate=build(data.get("criteria_can_evaluate"), False),
+        criteria_cannot_evaluate=build(data.get("criteria_cannot_evaluate"), True),
+        summary=data.get("summary", ""),
+        recommendations=data.get("recommendations", []),
+    )
+
+
+def _save_raw_response(output_dir: str | None, raw_response: str) -> str | None:
+    """Persist an unparseable extraction response for debugging; return a note."""
+    if not output_dir or not raw_response:
+        return None
+    try:
+        from pathlib import Path
+
+        path = Path(output_dir) / "extract_criteria_raw_response.txt"
+        path.write_text(raw_response, encoding="utf-8")
+        return f"Raw extraction response saved to {path.name} for debugging"
+    except Exception:
+        return None
 
 
 async def extract_criteria_node(state: ResearchState) -> dict:
@@ -75,92 +152,57 @@ async def extract_criteria_node(state: ResearchState) -> dict:
             except Exception as e:
                 messages.append(f"  Warning: Could not load {filepath}: {e}")
 
-    # Build message content
+    # Build the human message content once (multi-modal for PDFs, text otherwise)
+    # so we can re-send it verbatim on a parse-retry.
     if pdf_vision_content:
         from ..tools.vision_helper import create_vision_message_content
 
         url, content_str = pdf_vision_content
         pdf_data = json.loads(content_str)
-
-        # Create multi-modal message with text + images
-        message_content = create_vision_message_content(pdf_data, prompt)
-        response = await llm.ainvoke(
-            [
-                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-                HumanMessage(content=message_content),
-            ]
-        )
+        human_content = create_vision_message_content(pdf_data, prompt)
     else:
-        # Regular text-only message
-        response = await llm.ainvoke(
-            [
-                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-                HumanMessage(content=prompt),
-            ]
-        )
+        human_content = prompt
 
-    # Parse response
-    response_text = response.content
-    if isinstance(response_text, list):
-        response_text = response_text[0].get("text", "") if response_text else ""
+    conversation = [
+        SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+        HumanMessage(content=human_content),
+    ]
 
-    # Extract JSON from response
-    try:
-        json_match = response_text
-        if "```json" in response_text:
-            json_match = response_text.split("```json")[1].split("```")[0]
-        elif "```" in response_text:
-            json_match = response_text.split("```")[1].split("```")[0]
+    # Extract with one retry: LLMs occasionally wrap the JSON in prose or truncate
+    # a fence, which used to silently produce an empty field mapping (the reported
+    # "no base criteria" symptom). Retry once with a JSON-only nudge before giving up.
+    field_mapping = None
+    last_error: Exception | None = None
+    raw_response = ""
+    for attempt in range(1, 3):
+        response = await llm.ainvoke(conversation)
+        raw_response = response.content
+        if isinstance(raw_response, list):
+            raw_response = raw_response[0].get("text", "") if raw_response else ""
 
-        data = json.loads(json_match)
-
-        # Build criteria objects
-        valid_impact_values = {level.value for level in ImpactLevel}
-
-        def parse_impact(value: str | None) -> ImpactLevel:
-            if value and value in valid_impact_values:
-                return ImpactLevel(value)
-            return ImpactLevel.MEDIUM
-
-        criteria_can_evaluate = []
-        for item in data.get("criteria_can_evaluate", []):
-            criteria_can_evaluate.append(
-                EligibilityCriterion(
-                    criterion=item.get("criterion", ""),
-                    source_reference=item.get("source_reference", ""),
-                    source_url=item.get("source_url"),
-                    screener_fields=item.get("screener_fields"),
-                    evaluation_logic=item.get("evaluation_logic"),
-                    notes=item.get("notes", ""),
-                    impact=parse_impact(item.get("impact")),
+        try:
+            field_mapping = parse_field_mapping(raw_response, state.program_name)
+            break
+        except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError) as e:
+            last_error = e
+            messages.append(f"Attempt {attempt}: could not parse extraction response ({e})")
+            if attempt == 1:
+                conversation.append(AIMessage(content=raw_response))
+                conversation.append(
+                    HumanMessage(
+                        content=(
+                            "Your previous response could not be parsed as JSON. Return ONLY "
+                            "the JSON object with keys criteria_can_evaluate, "
+                            "criteria_cannot_evaluate, summary, and recommendations — no prose, "
+                            "wrapped in a ```json fenced block."
+                        )
+                    )
                 )
-            )
 
-        criteria_cannot_evaluate = []
-        for item in data.get("criteria_cannot_evaluate", []):
-            criteria_cannot_evaluate.append(
-                EligibilityCriterion(
-                    criterion=item.get("criterion", ""),
-                    source_reference=item.get("source_reference", ""),
-                    source_url=item.get("source_url"),
-                    screener_fields=None,
-                    evaluation_logic=None,
-                    notes=item.get("notes", ""),
-                    impact=parse_impact(item.get("impact")),
-                )
-            )
-
-        field_mapping = FieldMapping(
-            program_name=state.program_name,
-            criteria_can_evaluate=criteria_can_evaluate,
-            criteria_cannot_evaluate=criteria_cannot_evaluate,
-            summary=data.get("summary", ""),
-            recommendations=data.get("recommendations", []),
-        )
-
+    if field_mapping is not None:
         messages.append(
-            f"Extracted {len(criteria_can_evaluate)} evaluable criteria, "
-            f"{len(criteria_cannot_evaluate)} data gaps"
+            f"Extracted {len(field_mapping.criteria_can_evaluate)} evaluable criteria, "
+            f"{len(field_mapping.criteria_cannot_evaluate)} data gaps"
         )
         messages.append(f"Summary: {field_mapping.summary}")
 
@@ -169,19 +211,21 @@ async def extract_criteria_node(state: ResearchState) -> dict:
             "messages": messages,
         }
 
-    except (json.JSONDecodeError, KeyError) as e:
-        messages.append(f"Error parsing LLM response: {e}")
-        messages.append("Raw response saved for debugging")
+    # Both attempts failed — persist the raw response for debugging and surface the
+    # error rather than silently emitting an empty spec.
+    saved_note = _save_raw_response(state.output_dir, raw_response)
+    if saved_note:
+        messages.append(saved_note)
+    messages.append(f"Error extracting criteria after retries: {last_error}")
 
-        # Return empty mapping
-        return {
-            "field_mapping": FieldMapping(
-                program_name=state.program_name,
-                summary=f"Error extracting criteria: {e}",
-            ),
-            "messages": messages,
-            "error_message": str(e),
-        }
+    return {
+        "field_mapping": FieldMapping(
+            program_name=state.program_name,
+            summary=f"Error extracting criteria: {last_error}",
+        ),
+        "messages": messages,
+        "error_message": str(last_error),
+    }
 
 
 def format_link_catalog(catalog) -> str:
