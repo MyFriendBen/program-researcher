@@ -37,11 +37,15 @@ def build_field_mapping(program_name: str, data: dict) -> FieldMapping:
     identical schema. criteria_cannot_evaluate are data gaps, so screener_fields
     and evaluation_logic are forced to None there.
     """
-    valid_impact_values = {level.value for level in ImpactLevel}
+    # Map lower-cased value -> enum so case variants ("high", "HIGH") resolve
+    # correctly. The prompts emit lowercase while the enum values are title-case,
+    # so a naive membership check would silently default everything to MEDIUM.
+    impact_by_value = {level.value.lower(): level for level in ImpactLevel}
 
     def parse_impact(value: str | None) -> ImpactLevel:
-        if value and value in valid_impact_values:
-            return ImpactLevel(value)
+        normalized = value.strip().lower() if isinstance(value, str) else None
+        if normalized and normalized in impact_by_value:
+            return impact_by_value[normalized]
         return ImpactLevel.MEDIUM
 
     criteria_can_evaluate = [
@@ -55,6 +59,7 @@ def build_field_mapping(program_name: str, data: dict) -> FieldMapping:
             impact=parse_impact(item.get("impact")),
         )
         for item in data.get("criteria_can_evaluate", [])
+        if isinstance(item, dict)
     ]
 
     criteria_cannot_evaluate = [
@@ -68,6 +73,7 @@ def build_field_mapping(program_name: str, data: dict) -> FieldMapping:
             impact=parse_impact(item.get("impact")),
         )
         for item in data.get("criteria_cannot_evaluate", [])
+        if isinstance(item, dict)
     ]
 
     return FieldMapping(

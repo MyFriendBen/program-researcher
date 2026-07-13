@@ -494,6 +494,155 @@ Return the COMPLETE mapping (all criteria, not just the changed ones), so it can
 replace the previous version.
 """
 
+FIX_TEST_CASES_PROMPT = """## Task: Fix Test Scenarios
+
+A QA reviewer has flagged issues with the current test scenarios. Apply the fixes
+and return the corrected suite.
+
+### Program Information
+- **Program Name**: {program_name}
+- **State**: {state_code}
+
+### Current Date
+Today is **{current_date}** (year: {current_year}). Use this to (re)calculate all birth
+years and ages. To make a person age X: birth_year = {current_year} - X (subtract 1 more
+if their birth_month hasn't passed yet this year).
+
+### Current Test Scenarios (JSON)
+{current_output}
+
+### QA Issues to Address
+{qa_issues}
+
+### Instructions
+1. Address every issue listed above, applying the suggested fix where it is correct.
+2. Make ONLY the changes needed to resolve the issues — preserve every other scenario,
+   its wording, ordering, and `scenario_number` exactly as-is.
+3. If an issue is invalid or cannot be resolved, leave that scenario unchanged (the next
+   QA pass will re-flag it if needed).
+4. Keep all data internally consistent: birth years must match stated ages for the current
+   year, `household_size` must match the number of `members_data` entries, and every
+   ELIGIBLE scenario must keep a committed numeric `expected_amount` (never null, "varies",
+   or "TBD"); `expected_amount` is null ONLY for ineligible scenarios.
+
+### Output
+Return ONLY a JSON object wrapped in a ```json fenced block, using EXACTLY the same
+per-scenario schema as the generation step:
+```json
+{{
+  "test_cases": [
+    {{
+      "scenario_number": 1,
+      "title": "Descriptive Title",
+      "what_checking": "What this specific test validates",
+      "category": "happy_path",
+      "expected_eligible": true,
+      "expected_amount": 600,
+      "expected_time": "15 minutes",
+      "steps": [
+        {{"section": "Location", "instructions": ["Enter ZIP code `60601`", "Select county `Cook`"]}}
+      ],
+      "what_to_look_for": ["Expected result 1"],
+      "why_matters": "Why this test is important",
+      "zip_code": "60601",
+      "county": "Cook",
+      "household_size": 1,
+      "household_assets": 0,
+      "members_data": [
+        {{
+          "relationship": "headOfHousehold",
+          "birth_month": 3,
+          "birth_year": 1953,
+          "has_income": true,
+          "income": {{"sSRetirement": 800, "income_frequency": "monthly"}},
+          "insurance": {{"none": true}}
+        }}
+      ],
+      "current_benefits": {{}},
+      "citizenship_status": "citizen"
+    }}
+  ]
+}}
+```
+Return the COMPLETE suite (all scenarios, not just the changed ones) so it can fully
+replace the previous version. County format: for TX and IL omit the "County" suffix
+(e.g. `"Cook"`); for CO and NC include it (e.g. `"Denver County"`); for MA use city names.
+"""
+
+FIX_JSON_PROMPT = """## Task: Fix JSON Test Cases
+
+A QA reviewer has flagged issues with the JSON test cases (schema violations and/or
+mismatches against the human-readable source). Apply the fixes and return the corrected
+JSON array.
+
+### Program Information
+- **Program Name**: {program_name}
+- **White Label**: {white_label}
+- **Current Date**: {current_date} (use to recompute `age` from birth_month/birth_year)
+
+### Human-Readable Source Scenarios (the source of truth for values)
+{human_test_cases}
+
+### Current JSON Test Cases
+{current_output}
+
+### QA Issues to Address
+{qa_issues}
+
+### Instructions
+1. Address every issue listed above. Schema violations MUST be corrected so each case
+   validates against test_case_schema.json.
+2. Make ONLY the changes needed — preserve every other case, its ordering, and values
+   exactly as-is.
+3. Keep the JSON faithful to the human-readable source: `eligible`/`value` must match the
+   source scenario's expected outcome, and `age` must match birth_month/birth_year for the
+   current date.
+4. Use `zipcode` (not zip_code), `agree_to_tos`, `household_members`, and `income_streams`
+   (a list of `{{"type", "amount", "frequency"}}` objects). Include an `expenses` list
+   (use `[]` if none). `program_name` in expected_results is "{white_label}_{program_name}"
+   (all lowercase).
+
+### Output
+Return ONLY a JSON object wrapped in a ```json fenced block with a `test_cases` array,
+using EXACTLY the schema format:
+```json
+{{
+  "test_cases": [
+    {{
+      "notes": "IL CSFP - Clearly eligible senior with SS income",
+      "household": {{
+        "white_label": "{white_label}",
+        "household_size": 1,
+        "zipcode": "60601",
+        "county": "Cook",
+        "household_assets": 0,
+        "agree_to_tos": true,
+        "is_13_or_older": true,
+        "expenses": [],
+        "household_members": [
+          {{
+            "relationship": "headOfHousehold",
+            "birth_month": 3,
+            "birth_year": 1953,
+            "age": 72,
+            "has_income": true,
+            "income_streams": [{{"type": "sSRetirement", "amount": 800, "frequency": "monthly"}}],
+            "insurance": {{"none": true}}
+          }}
+        ]
+      }},
+      "expected_results": {{
+        "program_name": "{white_label}_{program_name}",
+        "eligible": true,
+        "value": 600
+      }}
+    }}
+  ]
+}}
+```
+Return the COMPLETE set of test cases so it can fully replace the previous version.
+"""
+
 GENERATE_SINGLE_TEST_CASE_PROMPT = """## Task: Generate a Single Test Scenario
 
 Create ONE test scenario for the specified category.
@@ -1111,6 +1260,8 @@ RESEARCHER_PROMPTS = {
     "convert_to_json": CONVERT_TO_JSON_PROMPT,
     "fix_issues": FIX_ISSUES_PROMPT,
     "fix_research": FIX_RESEARCH_PROMPT,
+    "fix_test_cases": FIX_TEST_CASES_PROMPT,
+    "fix_json": FIX_JSON_PROMPT,
     "generate_program_config": GENERATE_PROGRAM_CONFIG_PROMPT,
     "generate_sources_documentation": GENERATE_SOURCES_DOCUMENTATION_PROMPT,
     "test_case_categories": TEST_CASE_CATEGORIES,

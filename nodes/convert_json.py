@@ -10,6 +10,7 @@ from datetime import date
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import ValidationError
 
 from ..config import settings
 from ..prompts.researcher import RESEARCHER_PROMPTS
@@ -209,6 +210,14 @@ def convert_test_case(
 async def fix_json_node(state: ResearchState) -> dict:
     """
     Fix JSON conversion issues identified by QA.
+
+    Sends the current JSON test cases plus the QA issues (and the human-readable
+    source scenarios for reference) to the researcher model, parses the corrected
+    array back into JSONTestCase objects, and re-validates against the schema so
+    the next QA pass sees the improved version.
+
+    On any parse failure the original JSON is left intact and the iteration
+    counter bounds the loop.
     """
     messages = list(state.messages)
     messages.append("Fixing JSON conversion issues...")
@@ -217,8 +226,79 @@ async def fix_json_node(state: ResearchState) -> dict:
         messages.append("No JSON issues to fix")
         return {"messages": messages}
 
-    # In a full implementation, would parse issues and fix specific problems
+    if not state.json_test_cases:
+        messages.append("No JSON test cases available to fix")
+        return {"messages": messages}
 
-    messages.append(f"Addressed {len(state.json_qa_result.issues)} JSON issues")
+    from .extract_criteria import extract_json_block
+    from .qa_research import format_qa_issues
+    from .qa_tests import format_test_cases
 
-    return {"messages": messages}
+    current_json = json.dumps(
+        [tc.model_dump(exclude_none=True) for tc in state.json_test_cases], indent=2
+    )
+    human_source = format_test_cases(state.test_suite)
+    issues_text = format_qa_issues(state.json_qa_result.issues)
+
+    llm = ChatAnthropic(
+        model=settings.researcher_model,
+        temperature=settings.model_temperature,
+        max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
+        api_key=settings.anthropic_api_key,
+    )
+
+    prompt = RESEARCHER_PROMPTS["fix_json"].format(
+        program_name=state.program_name,
+        white_label=state.white_label,
+        current_output=current_json,
+        human_test_cases=human_source,
+        qa_issues=issues_text,
+        current_date=date.today().isoformat(),
+    )
+
+    response = await llm.ainvoke(
+        [
+            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+            HumanMessage(content=prompt),
+        ]
+    )
+
+    response_text = response.content
+    if isinstance(response_text, list):
+        response_text = response_text[0].get("text", "") if response_text else ""
+
+    try:
+        data = json.loads(extract_json_block(response_text))
+        raw_cases = data.get("test_cases", data) if isinstance(data, dict) else data
+        if not isinstance(raw_cases, list) or not raw_cases:
+            raise ValueError("No test cases in fix response")
+        fixed_json_cases = [
+            JSONTestCase.model_validate(item) for item in raw_cases if isinstance(item, dict)
+        ]
+        if not fixed_json_cases:
+            raise ValueError("No valid test cases parsed from fix response")
+    except (json.JSONDecodeError, KeyError, ValueError, ValidationError) as e:
+        # Leave the JSON unchanged; qa_validate_json will re-flag on the next pass
+        # and the iteration counter bounds the loop.
+        messages.append(f"Could not parse fix response ({e}); leaving JSON unchanged")
+        return {"messages": messages}
+
+    # Re-validate the repaired cases against the schema for logging.
+    valid_count = sum(
+        1 for tc in fixed_json_cases if validate_test_case(tc.model_dump(exclude_none=True))[0]
+    )
+
+    for issue in state.json_qa_result.issues:
+        issue.resolved = True
+
+    messages.append(
+        f"Applied fixes for {len(state.json_qa_result.issues)} issues; "
+        f"schema validation: {valid_count}/{len(fixed_json_cases)} valid"
+    )
+
+    return {
+        "json_test_cases": fixed_json_cases,
+        "json_qa_result": state.json_qa_result,
+        "messages": messages,
+    }
