@@ -7,7 +7,8 @@ Step 3 of the QA process - extract eligibility criteria and map to screener fiel
 import json
 
 from langchain_anthropic import ChatAnthropic
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
 from ..config import settings
 from ..prompts.researcher import RESEARCHER_PROMPTS
@@ -41,18 +42,39 @@ def extract_json_payload(response_text: str) -> str:
     return text
 
 
-def parse_field_mapping(response_text: str, program_name: str) -> FieldMapping:
-    """Parse the extraction LLM response into a FieldMapping.
+class ExtractionResult(BaseModel):
+    """Schema the model fills via structured output (Anthropic tool calling).
 
-    Raises json.JSONDecodeError / ValueError / TypeError on unusable responses so
-    the caller can retry or fail loudly instead of returning an empty mapping.
+    Mirrors the extraction JSON payload minus program_name (that comes from state).
+    Binding this to the LLM makes the model responsible for emitting schema-valid
+    data, so we no longer parse JSON out of free-text prose in the common case.
     """
-    data = json.loads(extract_json_payload(response_text))
+
+    criteria_can_evaluate: list[EligibilityCriterion] = Field(
+        default_factory=list,
+        description="Criteria that map to one or more screener fields",
+    )
+    criteria_cannot_evaluate: list[EligibilityCriterion] = Field(
+        default_factory=list,
+        description="Data gaps: criteria with no matching screener field",
+    )
+    summary: str = Field(default="", description="Summary of mapping coverage")
+    recommendations: list[str] = Field(
+        default_factory=list, description="Recommendations for gaps"
+    )
+
+
+def _field_mapping_from_data(data: dict, program_name: str) -> FieldMapping:
+    """Build a FieldMapping from a parsed extraction payload (dict).
+
+    Shared by the structured-output path and the text-parse fallback. Raises
+    ValueError/TypeError on a non-object payload so callers can fail loudly.
+    """
     if not isinstance(data, dict):
-        raise ValueError("Extraction response was not a JSON object")
+        raise ValueError("Extraction result was not a JSON object")
 
     # Map lower-cased value -> enum so case variants ("high", "HIGH") resolve
-    # correctly (the model emits lowercase; enum values are title-case).
+    # correctly (the enum values are title-case).
     impact_by_value = {level.value.lower(): level for level in ImpactLevel}
 
     def parse_impact(value) -> ImpactLevel:
@@ -82,6 +104,33 @@ def parse_field_mapping(response_text: str, program_name: str) -> FieldMapping:
         summary=data.get("summary", ""),
         recommendations=data.get("recommendations", []),
     )
+
+
+def parse_field_mapping(response_text: str, program_name: str) -> FieldMapping:
+    """Text-parse fallback: salvage a FieldMapping from a free-text response.
+
+    Only used when structured output fails to return a tool call. Raises
+    json.JSONDecodeError / ValueError / TypeError on unusable responses.
+    """
+    return _field_mapping_from_data(
+        json.loads(extract_json_payload(response_text)), program_name
+    )
+
+
+def _message_text(message) -> str:
+    """Extract plain text from an LLM message (str content or content blocks)."""
+    if message is None:
+        return ""
+    content = getattr(message, "content", message)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = [
+            block.get("text", "") if isinstance(block, dict) else str(block)
+            for block in content
+        ]
+        return "\n".join(p for p in parts if p)
+    return str(content)
 
 
 def _save_raw_response(output_dir: str | None, raw_response: str) -> str | None:
@@ -152,8 +201,7 @@ async def extract_criteria_node(state: ResearchState) -> dict:
             except Exception as e:
                 messages.append(f"  Warning: Could not load {filepath}: {e}")
 
-    # Build the human message content once (multi-modal for PDFs, text otherwise)
-    # so we can re-send it verbatim on a parse-retry.
+    # Build the human message content (multi-modal for PDFs, text otherwise).
     if pdf_vision_content:
         from ..tools.vision_helper import create_vision_message_content
 
@@ -168,36 +216,28 @@ async def extract_criteria_node(state: ResearchState) -> dict:
         HumanMessage(content=human_content),
     ]
 
-    # Extract with one retry: LLMs occasionally wrap the JSON in prose or truncate
-    # a fence, which used to silently produce an empty field mapping (the reported
-    # "no base criteria" symptom). Retry once with a JSON-only nudge before giving up.
+    # Let the model produce the JSON directly via structured output (tool calling)
+    # instead of parsing it out of free-text prose. include_raw=True means a schema
+    # miss is reported (parsing_error) rather than raised, so we can fall back.
+    structured_llm = llm.with_structured_output(ExtractionResult, include_raw=True)
+    result = await structured_llm.ainvoke(conversation)
+
+    parsed = result.get("parsed")
+    raw_text = _message_text(result.get("raw"))
+
     field_mapping = None
     last_error: Exception | None = None
-    raw_response = ""
-    for attempt in range(1, 3):
-        response = await llm.ainvoke(conversation)
-        raw_response = response.content
-        if isinstance(raw_response, list):
-            raw_response = raw_response[0].get("text", "") if raw_response else ""
-
+    if parsed is not None:
+        field_mapping = _field_mapping_from_data(parsed.model_dump(), state.program_name)
+    else:
+        # Rare: the model returned prose instead of calling the tool. Try to salvage
+        # it with the text parser before giving up.
+        last_error = result.get("parsing_error")
         try:
-            field_mapping = parse_field_mapping(raw_response, state.program_name)
-            break
+            field_mapping = parse_field_mapping(raw_text, state.program_name)
+            messages.append("Structured output missed; recovered via text-parse fallback")
         except (json.JSONDecodeError, KeyError, IndexError, ValueError, TypeError) as e:
-            last_error = e
-            messages.append(f"Attempt {attempt}: could not parse extraction response ({e})")
-            if attempt == 1:
-                conversation.append(AIMessage(content=raw_response))
-                conversation.append(
-                    HumanMessage(
-                        content=(
-                            "Your previous response could not be parsed as JSON. Return ONLY "
-                            "the JSON object with keys criteria_can_evaluate, "
-                            "criteria_cannot_evaluate, summary, and recommendations — no prose, "
-                            "wrapped in a ```json fenced block."
-                        )
-                    )
-                )
+            last_error = last_error or e
 
     if field_mapping is not None:
         messages.append(
@@ -211,12 +251,12 @@ async def extract_criteria_node(state: ResearchState) -> dict:
             "messages": messages,
         }
 
-    # Both attempts failed — persist the raw response for debugging and surface the
-    # error rather than silently emitting an empty spec.
-    saved_note = _save_raw_response(state.output_dir, raw_response)
+    # Structured output and the fallback both failed — persist the raw response for
+    # debugging and surface the error rather than silently emitting an empty spec.
+    saved_note = _save_raw_response(state.output_dir, raw_text)
     if saved_note:
         messages.append(saved_note)
-    messages.append(f"Error extracting criteria after retries: {last_error}")
+    messages.append(f"Error extracting criteria: {last_error}")
 
     return {
         "field_mapping": FieldMapping(

@@ -9,7 +9,7 @@ import json
 
 import program_research_agent.nodes.extract_criteria as ec
 import pytest
-from program_research_agent.state import ImpactLevel, ResearchState
+from program_research_agent.state import EligibilityCriterion, ImpactLevel, ResearchState
 
 _GOOD_PAYLOAD = {
     "criteria_can_evaluate": [
@@ -70,25 +70,34 @@ def test_parse_field_mapping_raises_on_unusable(bad):
 # ---------------------------------------------------------------------------
 
 
-class _Resp:
-    def __init__(self, text):
-        self.content = text
+class _Msg:
+    """Minimal stand-in for an LLM message with a `.content` attribute."""
+
+    def __init__(self, content=""):
+        self.content = content
 
 
-class _SequenceLLM:
-    """Returns a queued response per ainvoke call (for testing retry)."""
+class _FakeStructured:
+    """Return value of with_structured_output(...): its ainvoke yields the raw/parsed dict."""
 
-    def __init__(self, texts):
-        self._texts = list(texts)
-        self._i = 0
+    def __init__(self, result):
+        self._result = result
+
+    async def ainvoke(self, _messages):
+        return self._result
+
+
+class _FakeLLM:
+    """Stands in for ChatAnthropic; with_structured_output returns a canned result dict."""
+
+    def __init__(self, structured_result):
+        self._structured_result = structured_result
 
     def __call__(self, *args, **kwargs):
         return self
 
-    async def ainvoke(self, _messages):
-        text = self._texts[min(self._i, len(self._texts) - 1)]
-        self._i += 1
-        return _Resp(text)
+    def with_structured_output(self, _schema, include_raw=False):
+        return _FakeStructured(self._structured_result)
 
 
 _BASE = {"program_name": "csfp", "state_code": "il", "white_label": "il", "source_urls": ["http://x"]}
@@ -102,26 +111,50 @@ def _stub_formatters(monkeypatch):
     monkeypatch.setattr(ec, "format_link_catalog", lambda *a, **k: "LINKS")
 
 
-async def test_extract_criteria_success_first_attempt(monkeypatch):
-    monkeypatch.setattr(ec, "ChatAnthropic", _SequenceLLM([_fenced(_GOOD_PAYLOAD)]))
-    out = await ec.extract_criteria_node(ResearchState(**_BASE))
-    assert out["field_mapping"].criteria_can_evaluate
-    assert "error_message" not in out
-
-
-async def test_extract_criteria_recovers_on_retry(monkeypatch):
-    monkeypatch.setattr(
-        ec, "ChatAnthropic", _SequenceLLM(["I could not format that", _fenced(_GOOD_PAYLOAD)])
+async def test_extract_criteria_success_via_structured_output(monkeypatch):
+    parsed = ec.ExtractionResult(
+        criteria_can_evaluate=[
+            EligibilityCriterion(criterion="age >= 60", source_reference="7 CFR", impact=ImpactLevel.HIGH)
+        ],
+        criteria_cannot_evaluate=[],
+        summary="s",
+        recommendations=["r1"],
     )
+    result = {"raw": _Msg("<tool call>"), "parsed": parsed, "parsing_error": None}
+    monkeypatch.setattr(ec, "ChatAnthropic", _FakeLLM(result))
+
     out = await ec.extract_criteria_node(ResearchState(**_BASE))
+
+    assert out["field_mapping"].criteria_can_evaluate[0].criterion == "age >= 60"
+    assert "error_message" not in out
+
+
+async def test_extract_criteria_recovers_via_text_fallback(monkeypatch):
+    # Model returned prose instead of a tool call — salvage it with the text parser.
+    result = {
+        "raw": _Msg(_fenced(_GOOD_PAYLOAD)),
+        "parsed": None,
+        "parsing_error": ValueError("no tool call"),
+    }
+    monkeypatch.setattr(ec, "ChatAnthropic", _FakeLLM(result))
+
+    out = await ec.extract_criteria_node(ResearchState(**_BASE))
+
     assert out["field_mapping"].criteria_can_evaluate
     assert "error_message" not in out
-    assert any("Attempt 1" in m for m in out["messages"])
+    assert any("text-parse fallback" in m for m in out["messages"])
 
 
-async def test_extract_criteria_fails_loudly_after_retry(monkeypatch, tmp_path):
-    monkeypatch.setattr(ec, "ChatAnthropic", _SequenceLLM(["no json", "still no json"]))
+async def test_extract_criteria_fails_loudly(monkeypatch, tmp_path):
+    result = {
+        "raw": _Msg("totally not json"),
+        "parsed": None,
+        "parsing_error": ValueError("no tool call"),
+    }
+    monkeypatch.setattr(ec, "ChatAnthropic", _FakeLLM(result))
+
     out = await ec.extract_criteria_node(ResearchState(**_BASE, output_dir=str(tmp_path)))
+
     assert out["field_mapping"].criteria_can_evaluate == []
     assert "error_message" in out
     assert (tmp_path / "extract_criteria_raw_response.txt").exists()
