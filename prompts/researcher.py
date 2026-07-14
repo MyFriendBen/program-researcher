@@ -171,7 +171,7 @@ Analyze the program documentation to extract all eligibility criteria and map th
 
 ### Output Format
 
-Return a JSON object with this structure:
+Provide the mapping through the structured-output tool, matching this shape:
 ```json
 {{
   "program_name": "{program_name}",
@@ -462,8 +462,8 @@ and return the corrected mapping.
    more screener fields) vs. `criteria_cannot_evaluate` (data gaps, no screener field).
 
 ### Output
-Return ONLY a JSON object in EXACTLY this schema (same as the extraction step), wrapped
-in a ```json fenced block:
+Provide the corrected mapping through the structured-output tool, matching EXACTLY this
+schema (the same one the extraction step uses):
 ```json
 {{
   "criteria_can_evaluate": [
@@ -526,7 +526,7 @@ if their birth_month hasn't passed yet this year).
    or "TBD"); `expected_amount` is null ONLY for ineligible scenarios.
 
 ### Output
-Return ONLY a JSON object wrapped in a ```json fenced block, using EXACTLY the same
+Provide the corrected suite through the structured-output tool, using EXACTLY the same
 per-scenario schema as the generation step:
 ```json
 {{
@@ -603,7 +603,7 @@ JSON array.
    (all lowercase).
 
 ### Output
-Return ONLY a JSON object wrapped in a ```json fenced block with a `test_cases` array,
+Provide the corrected cases through the structured-output tool as a `test_cases` array,
 using EXACTLY the schema format:
 ```json
 {{
@@ -674,7 +674,7 @@ Example: a 65-year-old born in March when today is February 2026 → birth_year 
 
 ### Output Format
 
-Return a JSON object for this SINGLE test case:
+Provide this SINGLE test case through the structured-output tool, matching this shape:
 ```json
 {{
   "scenario_number": {scenario_number},
@@ -723,7 +723,7 @@ Return a JSON object for this SINGLE test case:
 ```
 
 ### Important
-- Return ONLY the JSON object for this single test case
+- Provide exactly one test case via the structured-output tool
 - **CRITICAL**: birth_year values MUST be calculated from the current year ({current_year}), not guessed
 - Use realistic values based on current FPL and program thresholds
 - Ensure the scenario is DIFFERENT from previously generated ones

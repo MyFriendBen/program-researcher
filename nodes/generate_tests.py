@@ -4,7 +4,6 @@ Node: Generate Test Cases
 Step 5 of the QA process - generate human-readable test scenarios.
 """
 
-import json
 from datetime import date
 
 from langchain_anthropic import ChatAnthropic
@@ -16,67 +15,10 @@ from ..state import (
     TIER_VARIANCE,
     HumanTestCase,
     ResearchState,
-    ScenarioStep,
     ScenarioSuite,
     WorkflowStatus,
 )
 from ..tools.screener_fields import format_fields_for_prompt
-from .extract_criteria import extract_json_block
-
-
-def build_human_test_case(
-    item: dict, scenario_number: int, fallback_category: str = ""
-) -> HumanTestCase:
-    """Build a HumanTestCase from a parsed generation/fix JSON payload.
-
-    Shared by generate_tests_node and fix_test_cases_node so both apply the same
-    sanitization (boolean current_benefits, list members_data) to model output.
-    """
-    steps = [
-        ScenarioStep(
-            section=step_data.get("section", ""),
-            instructions=step_data.get("instructions", []),
-        )
-        for step_data in item.get("steps", [])
-        if isinstance(step_data, dict)
-    ]
-
-    # Sanitize current_benefits to ensure all values are booleans
-    raw_benefits = item.get("current_benefits", {})
-    current_benefits = {}
-    if isinstance(raw_benefits, dict):
-        for k, v in raw_benefits.items():
-            if isinstance(v, bool):
-                current_benefits[k] = v
-            elif isinstance(v, str):
-                current_benefits[k] = v.lower() in ("true", "yes", "1")
-            else:
-                current_benefits[k] = bool(v)
-
-    # Sanitize members_data to handle common issues
-    members_data = item.get("members_data", [])
-    if not isinstance(members_data, list):
-        members_data = []
-
-    return HumanTestCase(
-        scenario_number=scenario_number,
-        title=item.get("title", f"Test Case {scenario_number}"),
-        what_checking=item.get("what_checking", ""),
-        category=item.get("category", fallback_category),
-        expected_eligible=bool(item.get("expected_eligible", False)),
-        expected_amount=item.get("expected_amount"),
-        expected_time=item.get("expected_time"),
-        steps=steps,
-        what_to_look_for=item.get("what_to_look_for", []) or [],
-        why_matters=item.get("why_matters", ""),
-        zip_code=str(item.get("zip_code", "00000")),
-        county=str(item.get("county", "Unknown")),
-        household_size=int(item.get("household_size", 1)),
-        household_assets=float(item.get("household_assets", 0) or 0),
-        members_data=members_data,
-        current_benefits=current_benefits,
-        citizenship_status=str(item.get("citizenship_status", "citizen")),
-    )
 
 
 async def generate_tests_node(state: ResearchState) -> dict:
@@ -92,13 +34,14 @@ async def generate_tests_node(state: ResearchState) -> dict:
     # Format criteria for prompt
     criteria_text = format_evaluable_criteria(state.field_mapping)
 
+    # Structured output: each call returns a validated HumanTestCase directly.
     llm = ChatAnthropic(
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=4096,  # Smaller max tokens for single test cases
         max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
-    )
+    ).with_structured_output(HumanTestCase)
 
     # Get test case categories
     categories = RESEARCHER_PROMPTS.get("test_case_categories", [])
@@ -148,21 +91,18 @@ async def generate_tests_node(state: ResearchState) -> dict:
         )
 
         try:
-            response = await llm.ainvoke(
+            test_case = await llm.ainvoke(
                 [
                     SystemMessage(content=RESEARCHER_PROMPTS["system"]),
                     HumanMessage(content=prompt),
                 ]
             )
 
-            # Parse response
-            response_text = response.content
-            if isinstance(response_text, list):
-                response_text = response_text[0].get("text", "") if response_text else ""
-
-            # Extract JSON
-            item = json.loads(extract_json_block(response_text))
-            test_case = build_human_test_case(item, i, category)
+            # Force the loop-assigned scenario number and category so they stay
+            # consistent regardless of what the model echoes back.
+            test_case.scenario_number = i
+            if not test_case.category:
+                test_case.category = category
             test_cases.append(test_case)
             messages.append(f"  [{i}/{len(categories)}] Generated: {test_case.title}")
 
@@ -305,13 +245,14 @@ async def fix_test_cases_node(state: ResearchState) -> dict:
     current_output = state.test_suite.model_dump_json(indent=2)
     issues_text = format_qa_issues(state.test_case_qa_result.issues)
 
+    # Structured output: the model returns a corrected ScenarioSuite directly.
     llm = ChatAnthropic(
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
         max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
-    )
+    ).with_structured_output(ScenarioSuite)
 
     today = date.today()
     prompt = RESEARCHER_PROMPTS["fix_test_cases"].format(
@@ -323,35 +264,23 @@ async def fix_test_cases_node(state: ResearchState) -> dict:
         current_year=today.year,
     )
 
-    response = await llm.ainvoke(
-        [
-            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-            HumanMessage(content=prompt),
-        ]
-    )
-
-    response_text = response.content
-    if isinstance(response_text, list):
-        response_text = response_text[0].get("text", "") if response_text else ""
-
     try:
-        data = json.loads(extract_json_block(response_text))
-        raw_cases = data.get("test_cases", data) if isinstance(data, dict) else data
-        if not isinstance(raw_cases, list) or not raw_cases:
+        revised = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+        if not revised.test_cases:
             raise ValueError("No test cases in fix response")
-        fixed_cases = [
-            build_human_test_case(item, item.get("scenario_number", idx), item.get("category", ""))
-            for idx, item in enumerate(raw_cases, 1)
-            if isinstance(item, dict)
-        ]
-        if not fixed_cases:
-            raise ValueError("No valid test cases parsed from fix response")
-    except (json.JSONDecodeError, KeyError, IndexError, ValueError) as e:
+    except Exception as e:
         # Leave the suite unchanged; qa_validate_tests will re-flag on the next
         # pass and the iteration counter bounds the loop.
         messages.append(f"Could not parse fix response ({e}); leaving test suite unchanged")
         return {"messages": messages}
 
+    fixed_cases = revised.test_cases
+    # Preserve suite identity from state; only the scenarios were revised.
     fixed_suite = ScenarioSuite(
         program_name=state.test_suite.program_name,
         white_label=state.test_suite.white_label,

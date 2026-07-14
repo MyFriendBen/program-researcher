@@ -12,77 +12,26 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ..config import settings
 from ..prompts.researcher import RESEARCHER_PROMPTS
 from ..state import (
-    EligibilityCriterion,
     FieldMapping,
-    ImpactLevel,
     ResearchState,
 )
 from ..tools.screener_fields import format_fields_for_prompt
 from ..tools.vision_helper import is_pdf_vision_content
 
 
-def extract_json_block(response_text: str) -> str:
-    """Pull the JSON payload out of an LLM response, handling ```json fences."""
-    if "```json" in response_text:
-        return response_text.split("```json")[1].split("```")[0]
-    if "```" in response_text:
-        return response_text.split("```")[1].split("```")[0]
-    return response_text
+def normalize_field_mapping(program_name: str, mapping: FieldMapping) -> FieldMapping:
+    """Normalize a model-produced FieldMapping.
 
-
-def build_field_mapping(program_name: str, data: dict) -> FieldMapping:
-    """Build a FieldMapping from the parsed extraction/fix JSON payload.
-
-    Shared by extract_criteria_node and fix_research_node so both parse the
-    identical schema. criteria_cannot_evaluate are data gaps, so screener_fields
-    and evaluation_logic are forced to None there.
+    Shared by extract_criteria_node and fix_research_node: the program_name is
+    taken from state (never trusted from the model), and criteria_cannot_evaluate
+    are data gaps, so their screener_fields/evaluation_logic are forced to None.
+    Impact-level case coercion is handled by EligibilityCriterion's validator.
     """
-    # Map lower-cased value -> enum so case variants ("high", "HIGH") resolve
-    # correctly. The prompts emit lowercase while the enum values are title-case,
-    # so a naive membership check would silently default everything to MEDIUM.
-    impact_by_value = {level.value.lower(): level for level in ImpactLevel}
-
-    def parse_impact(value: str | None) -> ImpactLevel:
-        normalized = value.strip().lower() if isinstance(value, str) else None
-        if normalized and normalized in impact_by_value:
-            return impact_by_value[normalized]
-        return ImpactLevel.MEDIUM
-
-    criteria_can_evaluate = [
-        EligibilityCriterion(
-            criterion=item.get("criterion", ""),
-            source_reference=item.get("source_reference", ""),
-            source_url=item.get("source_url"),
-            screener_fields=item.get("screener_fields"),
-            evaluation_logic=item.get("evaluation_logic"),
-            notes=item.get("notes", ""),
-            impact=parse_impact(item.get("impact")),
-        )
-        for item in data.get("criteria_can_evaluate", [])
-        if isinstance(item, dict)
-    ]
-
-    criteria_cannot_evaluate = [
-        EligibilityCriterion(
-            criterion=item.get("criterion", ""),
-            source_reference=item.get("source_reference", ""),
-            source_url=item.get("source_url"),
-            screener_fields=None,
-            evaluation_logic=None,
-            notes=item.get("notes", ""),
-            impact=parse_impact(item.get("impact")),
-        )
-        for item in data.get("criteria_cannot_evaluate", [])
-        if isinstance(item, dict)
-    ]
-
-    return FieldMapping(
-        program_name=program_name,
-        criteria_can_evaluate=criteria_can_evaluate,
-        criteria_cannot_evaluate=criteria_cannot_evaluate,
-        summary=data.get("summary", ""),
-        recommendations=data.get("recommendations", []),
-    )
+    for criterion in mapping.criteria_cannot_evaluate:
+        criterion.screener_fields = None
+        criterion.evaluation_logic = None
+    mapping.program_name = program_name
+    return mapping
 
 
 async def extract_criteria_node(state: ResearchState) -> dict:
@@ -104,14 +53,16 @@ async def extract_criteria_node(state: ResearchState) -> dict:
     # Prepare screener fields for prompt
     screener_fields_text = format_fields_for_prompt(state.screener_fields)
 
-    # Call LLM to extract and map criteria
+    # Call LLM to extract and map criteria. The model returns a FieldMapping
+    # directly via structured output (forced tool call), so there is no fenced
+    # JSON to hand-parse.
     llm = ChatAnthropic(
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
         max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
-    )
+    ).with_structured_output(FieldMapping)
 
     prompt = RESEARCHER_PROMPTS["extract_criteria"].format(
         program_name=state.program_name,
@@ -148,43 +99,23 @@ async def extract_criteria_node(state: ResearchState) -> dict:
 
         # Create multi-modal message with text + images
         message_content = create_vision_message_content(pdf_data, prompt)
-        response = await llm.ainvoke(
-            [
-                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-                HumanMessage(content=message_content),
-            ]
-        )
+        request = [
+            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+            HumanMessage(content=message_content),
+        ]
     else:
         # Regular text-only message
-        response = await llm.ainvoke(
-            [
-                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-                HumanMessage(content=prompt),
-            ]
-        )
+        request = [
+            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+            HumanMessage(content=prompt),
+        ]
 
-    # Parse response
-    response_text = response.content
-    if isinstance(response_text, list):
-        response_text = response_text[0].get("text", "") if response_text else ""
-
-    # Extract JSON from response
+    # The model returns a validated FieldMapping (or raises if it cannot produce
+    # one). Any failure yields an empty mapping so downstream QA can re-flag.
     try:
-        data = json.loads(extract_json_block(response_text))
-        field_mapping = build_field_mapping(state.program_name, data)
-
-        messages.append(
-            f"Extracted {len(field_mapping.criteria_can_evaluate)} evaluable criteria, "
-            f"{len(field_mapping.criteria_cannot_evaluate)} data gaps"
-        )
-        messages.append(f"Summary: {field_mapping.summary}")
-
-        return {
-            "field_mapping": field_mapping,
-            "messages": messages,
-        }
-
-    except (json.JSONDecodeError, KeyError) as e:
+        field_mapping = await llm.ainvoke(request)
+        field_mapping = normalize_field_mapping(state.program_name, field_mapping)
+    except Exception as e:
         messages.append(f"Error parsing LLM response: {e}")
         messages.append("Raw response saved for debugging")
 
@@ -197,6 +128,17 @@ async def extract_criteria_node(state: ResearchState) -> dict:
             "messages": messages,
             "error_message": str(e),
         }
+
+    messages.append(
+        f"Extracted {len(field_mapping.criteria_can_evaluate)} evaluable criteria, "
+        f"{len(field_mapping.criteria_cannot_evaluate)} data gaps"
+    )
+    messages.append(f"Summary: {field_mapping.summary}")
+
+    return {
+        "field_mapping": field_mapping,
+        "messages": messages,
+    }
 
 
 def format_link_catalog(catalog) -> str:

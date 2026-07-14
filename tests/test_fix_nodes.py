@@ -1,11 +1,10 @@
 """Tests for the QA fix nodes (fix_research, fix_test_cases, fix_json).
 
 Each node sends the current artifact plus the QA issues to the researcher model
-and parses the corrected artifact back into state. The LLM call is stubbed so the
-tests exercise the guard / parse / state-update logic deterministically.
+and gets a corrected artifact back via structured output (with_structured_output),
+which returns an already-validated Pydantic object. The LLM is stubbed so the
+tests exercise the guard / state-update / leave-unchanged logic deterministically.
 """
-
-import json
 
 import program_research_agent.nodes.convert_json as cj
 import program_research_agent.nodes.generate_tests as gt
@@ -21,6 +20,7 @@ from program_research_agent.state import (
     JSONTestCaseExpectedResults,
     JSONTestCaseHousehold,
     JSONTestCaseMember,
+    JSONTestCaseSuite,
     QAIssue,
     QAValidationResult,
     ResearchState,
@@ -29,26 +29,29 @@ from program_research_agent.state import (
 )
 
 
-class _FakeResponse:
-    def __init__(self, text):
-        self.content = text
+class _FakeStructuredLLM:
+    """Stands in for ``ChatAnthropic(...).with_structured_output(Schema)``.
 
+    Constructed with any kwargs; ``with_structured_output`` returns self. On
+    ``ainvoke`` it either returns the canned parsed object or raises the given
+    error, mirroring how structured output raises when the model cannot produce
+    a valid instance of the schema.
+    """
 
-class _FakeLLM:
-    """Stands in for ChatAnthropic: constructed with any kwargs, returns canned text."""
-
-    def __init__(self, text):
-        self._text = text
+    def __init__(self, result=None, error=None):
+        self._result = result
+        self._error = error
 
     def __call__(self, *args, **kwargs):
         return self
 
+    def with_structured_output(self, schema, **kwargs):
+        return self
+
     async def ainvoke(self, _messages):
-        return _FakeResponse(self._text)
-
-
-def _fenced(payload) -> str:
-    return "```json\n" + json.dumps(payload) + "\n```"
+        if self._error is not None:
+            raise self._error
+        return self._result
 
 
 def _issue() -> QAIssue:
@@ -107,9 +110,9 @@ def _scenario_suite() -> ScenarioSuite:
     return ScenarioSuite(program_name="csfp", white_label="il", test_cases=[tc])
 
 
-def _json_test_case() -> JSONTestCase:
+def _json_test_case(notes="old notes", value=100) -> JSONTestCase:
     return JSONTestCase(
-        notes="old notes",
+        notes=notes,
         household=JSONTestCaseHousehold(
             white_label="il",
             household_size=1,
@@ -119,7 +122,7 @@ def _json_test_case() -> JSONTestCase:
                 JSONTestCaseMember(relationship="headOfHousehold", birth_month=3, birth_year=1953, age=72)
             ],
         ),
-        expected_results=JSONTestCaseExpectedResults(program_name="il_csfp", eligible=True, value=100),
+        expected_results=JSONTestCaseExpectedResults(program_name="il_csfp", eligible=True, value=value),
     )
 
 
@@ -130,43 +133,61 @@ def _json_test_case() -> JSONTestCase:
 
 @pytest.mark.asyncio
 async def test_fix_research_applies_corrections(monkeypatch):
-    payload = {
-        "criteria_can_evaluate": [
-            {
-                "criterion": "age >= 60 CORRECTED",
-                "source_reference": "7 CFR 247.9",
-                "impact": "high",  # lowercase must resolve to HIGH, not default MEDIUM
-                "screener_fields": ["age"],
-                "evaluation_logic": "member.age >= 60",
-            }
+    # Structured output returns a FieldMapping directly. Note impact="high"
+    # (lowercase) must resolve to HIGH via the model validator, and the data-gap
+    # criterion's screener_fields must be forced to None by normalization.
+    corrected = FieldMapping(
+        program_name="ignored-should-be-overridden",
+        criteria_can_evaluate=[
+            EligibilityCriterion(
+                criterion="age >= 60 CORRECTED",
+                source_reference="7 CFR 247.9",
+                impact="high",
+                screener_fields=["age"],
+                evaluation_logic="member.age >= 60",
+            )
         ],
-        "criteria_cannot_evaluate": [],
-        "summary": "fixed",
-        "recommendations": ["r1"],
-    }
-    monkeypatch.setattr(qa, "ChatAnthropic", _FakeLLM(_fenced(payload)))
+        criteria_cannot_evaluate=[
+            EligibilityCriterion(
+                criterion="not institutionalized",
+                source_reference="manual",
+                screener_fields=["should_be_nulled"],
+                evaluation_logic="should_be_nulled",
+            )
+        ],
+        summary="fixed",
+        recommendations=["r1"],
+    )
+    monkeypatch.setattr(qa, "ChatAnthropic", _FakeStructuredLLM(result=corrected))
     state = ResearchState(**_BASE, field_mapping=_field_mapping(), research_qa_result=_qa_result("research"))
 
     out = await qa.fix_research_node(state)
 
-    assert out["field_mapping"].criteria_can_evaluate[0].criterion == "age >= 60 CORRECTED"
-    assert out["field_mapping"].criteria_can_evaluate[0].impact == ImpactLevel.HIGH
+    mapping = out["field_mapping"]
+    assert mapping.program_name == "csfp"  # overridden from state, not the model
+    assert mapping.criteria_can_evaluate[0].criterion == "age >= 60 CORRECTED"
+    assert mapping.criteria_can_evaluate[0].impact == ImpactLevel.HIGH
+    # Data gaps must have screener_fields / evaluation_logic forced to None
+    assert mapping.criteria_cannot_evaluate[0].screener_fields is None
+    assert mapping.criteria_cannot_evaluate[0].evaluation_logic is None
     assert all(issue.resolved for issue in out["research_qa_result"].issues)
 
 
 @pytest.mark.asyncio
-async def test_fix_research_leaves_mapping_unchanged_on_bad_response(monkeypatch):
-    monkeypatch.setattr(qa, "ChatAnthropic", _FakeLLM("no json here"))
+async def test_fix_research_leaves_mapping_unchanged_when_output_invalid(monkeypatch):
+    # Structured output raises when the model cannot produce a valid schema.
+    monkeypatch.setattr(qa, "ChatAnthropic", _FakeStructuredLLM(error=ValueError("no tool call")))
     state = ResearchState(**_BASE, field_mapping=_field_mapping(), research_qa_result=_qa_result("research"))
 
     out = await qa.fix_research_node(state)
 
     assert "field_mapping" not in out
+    assert not any(issue.resolved for issue in state.research_qa_result.issues)
 
 
 @pytest.mark.asyncio
 async def test_fix_research_noop_without_field_mapping(monkeypatch):
-    monkeypatch.setattr(qa, "ChatAnthropic", _FakeLLM("unused"))
+    monkeypatch.setattr(qa, "ChatAnthropic", _FakeStructuredLLM(result=None))
     state = ResearchState(**_BASE, field_mapping=None, research_qa_result=_qa_result("research"))
 
     out = await qa.fix_research_node(state)
@@ -181,39 +202,55 @@ async def test_fix_research_noop_without_field_mapping(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fix_test_cases_applies_corrections(monkeypatch):
-    payload = {
-        "test_cases": [
-            {
-                "scenario_number": 1,
-                "title": "FIXED TITLE",
-                "category": "happy_path",
-                "expected_eligible": True,
-                "expected_amount": 600,
-                "steps": [{"section": "Location", "instructions": ["Enter ZIP `60601`"]}],
-                "what_to_look_for": ["eligible"],
-                "why_matters": "w",
-                "zip_code": "60601",
-                "county": "Cook",
-                "household_size": 1,
-                "members_data": [{"relationship": "headOfHousehold"}],
-                "current_benefits": {},
-                "citizenship_status": "citizen",
-            }
-        ]
-    }
-    monkeypatch.setattr(gt, "ChatAnthropic", _FakeLLM(_fenced(payload)))
+    # current_benefits carries a string "yes" to confirm the boolean coercion
+    # validator runs on structured-output results too.
+    fixed_tc = HumanTestCase(
+        scenario_number=1,
+        title="FIXED TITLE",
+        what_checking="w",
+        category="happy_path",
+        expected_eligible=True,
+        expected_amount=600,
+        steps=[ScenarioStep(section="Location", instructions=["Enter ZIP `60601`"])],
+        what_to_look_for=["eligible"],
+        why_matters="w",
+        zip_code="60601",
+        county="Cook",
+        household_size=1,
+        members_data=[{"relationship": "headOfHousehold"}],
+        current_benefits={"snap": "yes"},
+    )
+    corrected = ScenarioSuite(program_name="m", white_label="m", test_cases=[fixed_tc])
+    monkeypatch.setattr(gt, "ChatAnthropic", _FakeStructuredLLM(result=corrected))
     state = ResearchState(**_BASE, test_suite=_scenario_suite(), test_case_qa_result=_qa_result("test_cases"))
 
     out = await gt.fix_test_cases_node(state)
 
-    assert out["test_suite"].test_cases[0].title == "FIXED TITLE"
-    assert out["test_suite"].test_cases[0].expected_amount == 600
+    suite = out["test_suite"]
+    assert suite.program_name == "csfp"  # identity preserved from state
+    assert suite.white_label == "il"
+    assert suite.test_cases[0].title == "FIXED TITLE"
+    assert suite.test_cases[0].expected_amount == 600
+    assert suite.test_cases[0].current_benefits == {"snap": True}
     assert all(issue.resolved for issue in out["test_case_qa_result"].issues)
 
 
 @pytest.mark.asyncio
-async def test_fix_test_cases_leaves_suite_unchanged_on_bad_response(monkeypatch):
-    monkeypatch.setattr(gt, "ChatAnthropic", _FakeLLM("garbage, no json"))
+async def test_fix_test_cases_leaves_suite_unchanged_when_output_invalid(monkeypatch):
+    monkeypatch.setattr(gt, "ChatAnthropic", _FakeStructuredLLM(error=ValueError("bad output")))
+    state = ResearchState(**_BASE, test_suite=_scenario_suite(), test_case_qa_result=_qa_result("test_cases"))
+
+    out = await gt.fix_test_cases_node(state)
+
+    assert "test_suite" not in out
+    assert not any(issue.resolved for issue in state.test_case_qa_result.issues)
+
+
+@pytest.mark.asyncio
+async def test_fix_test_cases_leaves_suite_unchanged_when_empty(monkeypatch):
+    # A schema-valid but empty suite must be treated as a no-op.
+    empty = ScenarioSuite(program_name="m", white_label="m", test_cases=[])
+    monkeypatch.setattr(gt, "ChatAnthropic", _FakeStructuredLLM(result=empty))
     state = ResearchState(**_BASE, test_suite=_scenario_suite(), test_case_qa_result=_qa_result("test_cases"))
 
     out = await gt.fix_test_cases_node(state)
@@ -223,7 +260,7 @@ async def test_fix_test_cases_leaves_suite_unchanged_on_bad_response(monkeypatch
 
 @pytest.mark.asyncio
 async def test_fix_test_cases_noop_without_suite(monkeypatch):
-    monkeypatch.setattr(gt, "ChatAnthropic", _FakeLLM("unused"))
+    monkeypatch.setattr(gt, "ChatAnthropic", _FakeStructuredLLM(result=None))
     state = ResearchState(**_BASE, test_suite=None, test_case_qa_result=_qa_result("test_cases"))
 
     out = await gt.fix_test_cases_node(state)
@@ -238,31 +275,8 @@ async def test_fix_test_cases_noop_without_suite(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fix_json_applies_corrections(monkeypatch):
-    payload = {
-        "test_cases": [
-            {
-                "notes": "notes FIXED",
-                "household": {
-                    "white_label": "il",
-                    "household_size": 1,
-                    "zipcode": "60601",
-                    "county": "Cook",
-                    "expenses": [],
-                    "household_members": [
-                        {
-                            "relationship": "headOfHousehold",
-                            "birth_month": 3,
-                            "birth_year": 1953,
-                            "age": 72,
-                            "income_streams": [],
-                        }
-                    ],
-                },
-                "expected_results": {"program_name": "il_csfp", "eligible": True, "value": 600},
-            }
-        ]
-    }
-    monkeypatch.setattr(cj, "ChatAnthropic", _FakeLLM(_fenced(payload)))
+    corrected = JSONTestCaseSuite(test_cases=[_json_test_case(notes="notes FIXED", value=600)])
+    monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(result=corrected))
     state = ResearchState(
         **_BASE,
         test_suite=_scenario_suite(),
@@ -278,8 +292,24 @@ async def test_fix_json_applies_corrections(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_fix_json_leaves_json_unchanged_on_bad_response(monkeypatch):
-    monkeypatch.setattr(cj, "ChatAnthropic", _FakeLLM("nope"))
+async def test_fix_json_leaves_json_unchanged_when_output_invalid(monkeypatch):
+    monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(error=ValueError("bad output")))
+    state = ResearchState(
+        **_BASE,
+        test_suite=_scenario_suite(),
+        json_test_cases=[_json_test_case()],
+        json_qa_result=_qa_result("json"),
+    )
+
+    out = await cj.fix_json_node(state)
+
+    assert "json_test_cases" not in out
+    assert not any(issue.resolved for issue in state.json_qa_result.issues)
+
+
+@pytest.mark.asyncio
+async def test_fix_json_leaves_json_unchanged_when_empty(monkeypatch):
+    monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(result=JSONTestCaseSuite(test_cases=[])))
     state = ResearchState(
         **_BASE,
         test_suite=_scenario_suite(),
@@ -294,7 +324,7 @@ async def test_fix_json_leaves_json_unchanged_on_bad_response(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_fix_json_noop_without_json_test_cases(monkeypatch):
-    monkeypatch.setattr(cj, "ChatAnthropic", _FakeLLM("unused"))
+    monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(result=None))
     state = ResearchState(
         **_BASE, test_suite=_scenario_suite(), json_test_cases=[], json_qa_result=_qa_result("json")
     )
@@ -302,3 +332,38 @@ async def test_fix_json_noop_without_json_test_cases(monkeypatch):
     out = await cj.fix_json_node(state)
 
     assert "json_test_cases" not in out
+
+
+# ---------------------------------------------------------------------------
+# State-model validators that back the structured-output migration
+# ---------------------------------------------------------------------------
+
+
+def test_impact_validator_is_case_insensitive():
+    assert EligibilityCriterion(criterion="c", source_reference="r", impact="high").impact == ImpactLevel.HIGH
+    assert EligibilityCriterion(criterion="c", source_reference="r", impact="LOW").impact == ImpactLevel.LOW
+
+
+def test_impact_validator_defaults_unknown_to_medium():
+    crit = EligibilityCriterion(criterion="c", source_reference="r", impact="bogus")
+    assert crit.impact == ImpactLevel.MEDIUM
+
+
+def test_current_benefits_coercion_handles_strings_and_non_dict():
+    tc = HumanTestCase(
+        scenario_number=1,
+        title="t",
+        what_checking="w",
+        category="happy_path",
+        expected_eligible=False,
+        steps=[],
+        what_to_look_for=[],
+        why_matters="w",
+        zip_code="00000",
+        county="Unknown",
+        household_size=1,
+        members_data="not-a-list",
+        current_benefits={"snap": "yes", "tanf": "no", "wic": 1},
+    )
+    assert tc.current_benefits == {"snap": True, "tanf": False, "wic": True}
+    assert tc.members_data == []

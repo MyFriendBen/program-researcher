@@ -10,7 +10,6 @@ from datetime import date
 
 from langchain_anthropic import ChatAnthropic
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import ValidationError
 
 from ..config import settings
 from ..prompts.researcher import RESEARCHER_PROMPTS
@@ -22,6 +21,7 @@ from ..state import (
     JSONTestCaseHousehold,
     JSONTestCaseMember,
     JSONTestCaseMemberInsurance,
+    JSONTestCaseSuite,
     ResearchState,
     WorkflowStatus,
 )
@@ -212,12 +212,13 @@ async def fix_json_node(state: ResearchState) -> dict:
     Fix JSON conversion issues identified by QA.
 
     Sends the current JSON test cases plus the QA issues (and the human-readable
-    source scenarios for reference) to the researcher model, parses the corrected
-    array back into JSONTestCase objects, and re-validates against the schema so
+    source scenarios for reference) to the researcher model, which returns the
+    corrected cases via structured output (already validated into JSONTestCase
+    objects). They are re-checked against test_case_schema.json for logging so
     the next QA pass sees the improved version.
 
-    On any parse failure the original JSON is left intact and the iteration
-    counter bounds the loop.
+    On any failure the original JSON is left intact and the iteration counter
+    bounds the loop.
     """
     messages = list(state.messages)
     messages.append("Fixing JSON conversion issues...")
@@ -230,7 +231,6 @@ async def fix_json_node(state: ResearchState) -> dict:
         messages.append("No JSON test cases available to fix")
         return {"messages": messages}
 
-    from .extract_criteria import extract_json_block
     from .qa_research import format_qa_issues
     from .qa_tests import format_test_cases
 
@@ -240,13 +240,14 @@ async def fix_json_node(state: ResearchState) -> dict:
     human_source = format_test_cases(state.test_suite)
     issues_text = format_qa_issues(state.json_qa_result.issues)
 
+    # Structured output: the model returns a validated JSONTestCaseSuite directly.
     llm = ChatAnthropic(
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
         max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
-    )
+    ).with_structured_output(JSONTestCaseSuite)
 
     prompt = RESEARCHER_PROMPTS["fix_json"].format(
         program_name=state.program_name,
@@ -257,32 +258,22 @@ async def fix_json_node(state: ResearchState) -> dict:
         current_date=date.today().isoformat(),
     )
 
-    response = await llm.ainvoke(
-        [
-            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-            HumanMessage(content=prompt),
-        ]
-    )
-
-    response_text = response.content
-    if isinstance(response_text, list):
-        response_text = response_text[0].get("text", "") if response_text else ""
-
     try:
-        data = json.loads(extract_json_block(response_text))
-        raw_cases = data.get("test_cases", data) if isinstance(data, dict) else data
-        if not isinstance(raw_cases, list) or not raw_cases:
+        revised = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+        if not revised.test_cases:
             raise ValueError("No test cases in fix response")
-        fixed_json_cases = [
-            JSONTestCase.model_validate(item) for item in raw_cases if isinstance(item, dict)
-        ]
-        if not fixed_json_cases:
-            raise ValueError("No valid test cases parsed from fix response")
-    except (json.JSONDecodeError, KeyError, ValueError, ValidationError) as e:
+    except Exception as e:
         # Leave the JSON unchanged; qa_validate_json will re-flag on the next pass
         # and the iteration counter bounds the loop.
         messages.append(f"Could not parse fix response ({e}); leaving JSON unchanged")
         return {"messages": messages}
+
+    fixed_json_cases = revised.test_cases
 
     # Re-validate the repaired cases against the schema for logging.
     valid_count = sum(

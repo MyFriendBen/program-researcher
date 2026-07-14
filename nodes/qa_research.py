@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ..config import settings
 from ..prompts.qa_agent import QA_AGENT_PROMPTS
 from ..state import (
+    FieldMapping,
     IssueSeverity,
     QAIssue,
     QAValidationResult,
@@ -219,40 +220,35 @@ async def fix_research_node(state: ResearchState) -> dict:
         return {"messages": messages}
 
     from ..prompts.researcher import RESEARCHER_PROMPTS
-    from .extract_criteria import build_field_mapping, extract_json_block
+    from .extract_criteria import normalize_field_mapping
 
     # Send the full mapping as JSON (faithful round-trip; no truncation)
     current_output = state.field_mapping.model_dump_json(indent=2)
     issues_text = format_qa_issues(state.research_qa_result.issues)
 
+    # Structured output: the model returns a corrected FieldMapping directly.
     llm = ChatAnthropic(
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
         max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
-    )
+    ).with_structured_output(FieldMapping)
 
     prompt = RESEARCHER_PROMPTS["fix_research"].format(
         current_output=current_output,
         qa_issues=issues_text,
     )
 
-    response = await llm.ainvoke(
-        [
-            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-            HumanMessage(content=prompt),
-        ]
-    )
-
-    response_text = response.content
-    if isinstance(response_text, list):
-        response_text = response_text[0].get("text", "") if response_text else ""
-
     try:
-        data = json.loads(extract_json_block(response_text))
-        fixed_mapping = build_field_mapping(state.field_mapping.program_name, data)
-    except (json.JSONDecodeError, KeyError, IndexError) as e:
+        fixed_mapping = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+        fixed_mapping = normalize_field_mapping(state.field_mapping.program_name, fixed_mapping)
+    except Exception as e:
         # Don't mark anything resolved — let qa_validate_research re-flag and the
         # iteration counter bound the loop. The original mapping is left intact.
         messages.append(f"Could not parse fix response ({e}); leaving mapping unchanged")
