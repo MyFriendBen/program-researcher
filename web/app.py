@@ -5,6 +5,8 @@ Provides a simple form UI for triggering research runs and a results
 page for checking status and downloading output files.
 """
 
+import web.module_setup  # noqa: F401 — must run before program_research_agent imports
+
 import os
 import ssl
 
@@ -12,7 +14,7 @@ from flask import Flask, redirect, render_template, request, url_for
 from redis import Redis
 from rq import Queue
 
-from ..state import Engine, Tier
+from program_research_agent.state import Engine, Tier
 from .worker import run_research_job
 
 # Allowed Decision-tag values, sourced from the enums so the form, CLI, and
