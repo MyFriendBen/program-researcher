@@ -36,6 +36,18 @@ def test_engine_options_match_enum():
     assert set(values) <= valid, f"template engine values not in Engine enum: {set(values) - valid}"
 
 
+def test_tier_enum_fully_covered_by_template():
+    values = set(_option_values("tier"))
+    valid = {t.value for t in Tier}
+    assert not (valid - values), f"Tier enum values missing from template: {valid - values}"
+
+
+def test_engine_enum_fully_covered_by_template():
+    values = set(_option_values("engine"))
+    valid = {e.value for e in Engine}
+    assert not (valid - values), f"Engine enum values missing from template: {valid - values}"
+
+
 def test_state_custom_tier_is_selectable():
     # The specific option that triggered the reported traceback.
     assert Tier.STATE.value in _option_values("tier")
