@@ -12,7 +12,13 @@ from flask import Flask, redirect, render_template, request, url_for
 from redis import Redis
 from rq import Queue
 
+from ..state import Engine, Tier
 from .worker import run_research_job
+
+# Allowed Decision-tag values, sourced from the enums so the form, CLI, and
+# workflow can never drift apart again.
+VALID_ENGINES = {e.value for e in Engine}
+VALID_TIERS = {t.value for t in Tier}
 
 # Default list of org email addresses for the "your email" dropdown.
 # Override with a comma-separated env var if needed.
@@ -108,6 +114,24 @@ def submit():
         return render_template(
             "index.html",
             error="All fields are required: program, state, white label, email, and at least one source URL.",
+            form=request.form,
+            org_emails=ORG_EMAILS,
+        )
+
+    # Validate the optional Decision tags against the enums so an unexpected value
+    # (e.g. a stale form) surfaces as a friendly error instead of crashing the
+    # worker when ResearchState is constructed.
+    if engine is not None and engine not in VALID_ENGINES:
+        return render_template(
+            "index.html",
+            error=f"Invalid engine '{engine}'. Choose one of: {', '.join(sorted(VALID_ENGINES))}.",
+            form=request.form,
+            org_emails=ORG_EMAILS,
+        )
+    if tier is not None and tier not in VALID_TIERS:
+        return render_template(
+            "index.html",
+            error=f"Invalid tier '{tier}'. Choose one of: {', '.join(sorted(VALID_TIERS))}.",
             form=request.form,
             org_emails=ORG_EMAILS,
         )
