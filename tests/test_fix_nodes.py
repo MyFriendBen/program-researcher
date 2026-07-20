@@ -9,7 +9,6 @@ tests exercise the guard / state-update / leave-unchanged logic deterministicall
 import program_research_agent.nodes.convert_json as cj
 import program_research_agent.nodes.generate_tests as gt
 import program_research_agent.nodes.qa_research as qa
-import pytest
 from program_research_agent.state import (
     EligibilityCriterion,
     FieldMapping,
@@ -131,7 +130,6 @@ def _json_test_case(notes="old notes", value=100) -> JSONTestCase:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_fix_research_applies_corrections(monkeypatch):
     # Structured output returns a FieldMapping directly. Note impact="high"
     # (lowercase) must resolve to HIGH via the model validator, and the data-gap
@@ -173,7 +171,6 @@ async def test_fix_research_applies_corrections(monkeypatch):
     assert all(issue.resolved for issue in out["research_qa_result"].issues)
 
 
-@pytest.mark.asyncio
 async def test_fix_research_leaves_mapping_unchanged_when_output_invalid(monkeypatch):
     # Structured output raises when the model cannot produce a valid schema.
     monkeypatch.setattr(qa, "ChatAnthropic", _FakeStructuredLLM(error=ValueError("no tool call")))
@@ -185,7 +182,6 @@ async def test_fix_research_leaves_mapping_unchanged_when_output_invalid(monkeyp
     assert not any(issue.resolved for issue in state.research_qa_result.issues)
 
 
-@pytest.mark.asyncio
 async def test_fix_research_noop_without_field_mapping(monkeypatch):
     monkeypatch.setattr(qa, "ChatAnthropic", _FakeStructuredLLM(result=None))
     state = ResearchState(**_BASE, field_mapping=None, research_qa_result=_qa_result("research"))
@@ -200,7 +196,6 @@ async def test_fix_research_noop_without_field_mapping(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_fix_test_cases_applies_corrections(monkeypatch):
     # current_benefits carries a string "yes" to confirm the boolean coercion
     # validator runs on structured-output results too.
@@ -235,7 +230,6 @@ async def test_fix_test_cases_applies_corrections(monkeypatch):
     assert all(issue.resolved for issue in out["test_case_qa_result"].issues)
 
 
-@pytest.mark.asyncio
 async def test_fix_test_cases_leaves_suite_unchanged_when_output_invalid(monkeypatch):
     monkeypatch.setattr(gt, "ChatAnthropic", _FakeStructuredLLM(error=ValueError("bad output")))
     state = ResearchState(**_BASE, test_suite=_scenario_suite(), test_case_qa_result=_qa_result("test_cases"))
@@ -246,7 +240,6 @@ async def test_fix_test_cases_leaves_suite_unchanged_when_output_invalid(monkeyp
     assert not any(issue.resolved for issue in state.test_case_qa_result.issues)
 
 
-@pytest.mark.asyncio
 async def test_fix_test_cases_leaves_suite_unchanged_when_empty(monkeypatch):
     # A schema-valid but empty suite must be treated as a no-op.
     empty = ScenarioSuite(program_name="m", white_label="m", test_cases=[])
@@ -258,7 +251,6 @@ async def test_fix_test_cases_leaves_suite_unchanged_when_empty(monkeypatch):
     assert "test_suite" not in out
 
 
-@pytest.mark.asyncio
 async def test_fix_test_cases_noop_without_suite(monkeypatch):
     monkeypatch.setattr(gt, "ChatAnthropic", _FakeStructuredLLM(result=None))
     state = ResearchState(**_BASE, test_suite=None, test_case_qa_result=_qa_result("test_cases"))
@@ -273,7 +265,6 @@ async def test_fix_test_cases_noop_without_suite(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 async def test_fix_json_applies_corrections(monkeypatch):
     corrected = JSONTestCaseSuite(test_cases=[_json_test_case(notes="notes FIXED", value=600)])
     monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(result=corrected))
@@ -291,7 +282,6 @@ async def test_fix_json_applies_corrections(monkeypatch):
     assert all(issue.resolved for issue in out["json_qa_result"].issues)
 
 
-@pytest.mark.asyncio
 async def test_fix_json_leaves_json_unchanged_when_output_invalid(monkeypatch):
     monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(error=ValueError("bad output")))
     state = ResearchState(
@@ -307,7 +297,6 @@ async def test_fix_json_leaves_json_unchanged_when_output_invalid(monkeypatch):
     assert not any(issue.resolved for issue in state.json_qa_result.issues)
 
 
-@pytest.mark.asyncio
 async def test_fix_json_leaves_json_unchanged_when_empty(monkeypatch):
     monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(result=JSONTestCaseSuite(test_cases=[])))
     state = ResearchState(
@@ -322,7 +311,6 @@ async def test_fix_json_leaves_json_unchanged_when_empty(monkeypatch):
     assert "json_test_cases" not in out
 
 
-@pytest.mark.asyncio
 async def test_fix_json_noop_without_json_test_cases(monkeypatch):
     monkeypatch.setattr(cj, "ChatAnthropic", _FakeStructuredLLM(result=None))
     state = ResearchState(
