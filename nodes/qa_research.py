@@ -12,6 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from ..config import settings
 from ..prompts.qa_agent import QA_AGENT_PROMPTS
 from ..state import (
+    FieldMapping,
     IssueSeverity,
     QAIssue,
     QAValidationResult,
@@ -198,8 +199,14 @@ async def fix_research_node(state: ResearchState) -> dict:
     """
     Fix issues identified by QA validation.
 
-    This node takes the QA issues and asks the researcher agent
-    to address them.
+    Sends the FULL current field mapping (as JSON, not the truncated markdown
+    table) plus the QA issues to the researcher model, then parses the corrected
+    mapping back into a FieldMapping and returns it so the next QA pass validates
+    the improved version.
+
+    Token note: inputs are the structured field mapping + issues only (no source
+    docs), and the output is the same bounded JSON the extraction step already
+    produces — so this stays well within model_max_tokens.
     """
     messages = list(state.messages)
     messages.append("Fixing research issues identified by QA...")
@@ -208,48 +215,60 @@ async def fix_research_node(state: ResearchState) -> dict:
         messages.append("No issues to fix")
         return {"messages": messages}
 
-    # Format current output and issues
-    from ..prompts.researcher import RESEARCHER_PROMPTS
+    if not state.field_mapping:
+        messages.append("No field mapping available to fix")
+        return {"messages": messages}
 
-    current_output = format_field_mapping(state.field_mapping)
+    from ..prompts.researcher import RESEARCHER_PROMPTS
+    from .extract_criteria import normalize_field_mapping
+
+    # Send the full mapping as JSON (faithful round-trip; no truncation)
+    current_output = state.field_mapping.model_dump_json(indent=2)
     issues_text = format_qa_issues(state.research_qa_result.issues)
 
+    # Structured output: the model returns a corrected FieldMapping directly.
     llm = ChatAnthropic(
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=settings.model_max_tokens,
         max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
-    )
+    ).with_structured_output(FieldMapping)
 
-    prompt = RESEARCHER_PROMPTS["fix_issues"].format(
+    prompt = RESEARCHER_PROMPTS["fix_research"].format(
         current_output=current_output,
         qa_issues=issues_text,
     )
 
-    response = await llm.ainvoke(
-        [
-            SystemMessage(content=RESEARCHER_PROMPTS["system"]),
-            HumanMessage(content=prompt),
-        ]
+    try:
+        fixed_mapping = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+        fixed_mapping = normalize_field_mapping(state.field_mapping.program_name, fixed_mapping)
+    except Exception as e:
+        # Don't mark anything resolved — let qa_validate_research re-flag and the
+        # iteration counter bound the loop. The original mapping is left intact.
+        messages.append(f"Could not parse fix response ({e}); leaving mapping unchanged")
+        return {"messages": messages}
+
+    # Mark the issues we acted on as resolved (qa_validate_research will re-derive
+    # a fresh result on the next pass, but this keeps the current result honest).
+    for issue in state.research_qa_result.issues:
+        issue.resolved = True
+
+    messages.append(
+        f"Applied fixes for {len(state.research_qa_result.issues)} issues: "
+        f"{len(fixed_mapping.criteria_can_evaluate)} evaluable criteria, "
+        f"{len(fixed_mapping.criteria_cannot_evaluate)} data gaps after fix"
     )
 
-    # Parse and update field mapping
-    # This is simplified - in practice you'd parse the full response
-    response_text = response.content
-    if isinstance(response_text, list):
-        response_text = response_text[0].get("text", "") if response_text else ""
-
-    messages.append(f"Addressed {len(state.research_qa_result.issues)} issues")
-
-    # Mark issues as resolved
-    if state.research_qa_result:
-        for issue in state.research_qa_result.issues:
-            issue.resolved = True
-
     return {
+        "field_mapping": fixed_mapping,
+        "research_qa_result": state.research_qa_result,
         "messages": messages,
-        # In a full implementation, would return updated field_mapping
     }
 
 

@@ -4,7 +4,6 @@ Node: Generate Test Cases
 Step 5 of the QA process - generate human-readable test scenarios.
 """
 
-import json
 from datetime import date
 
 from langchain_anthropic import ChatAnthropic
@@ -16,7 +15,6 @@ from ..state import (
     TIER_VARIANCE,
     HumanTestCase,
     ResearchState,
-    ScenarioStep,
     ScenarioSuite,
     WorkflowStatus,
 )
@@ -36,13 +34,14 @@ async def generate_tests_node(state: ResearchState) -> dict:
     # Format criteria for prompt
     criteria_text = format_evaluable_criteria(state.field_mapping)
 
+    # Structured output: each call returns a validated HumanTestCase directly.
     llm = ChatAnthropic(
         model=settings.researcher_model,
         temperature=settings.model_temperature,
         max_tokens=4096,  # Smaller max tokens for single test cases
         max_retries=settings.model_max_retries,
         api_key=settings.anthropic_api_key,
-    )
+    ).with_structured_output(HumanTestCase)
 
     # Get test case categories
     categories = RESEARCHER_PROMPTS.get("test_case_categories", [])
@@ -92,73 +91,18 @@ async def generate_tests_node(state: ResearchState) -> dict:
         )
 
         try:
-            response = await llm.ainvoke(
+            test_case = await llm.ainvoke(
                 [
                     SystemMessage(content=RESEARCHER_PROMPTS["system"]),
                     HumanMessage(content=prompt),
                 ]
             )
 
-            # Parse response
-            response_text = response.content
-            if isinstance(response_text, list):
-                response_text = response_text[0].get("text", "") if response_text else ""
-
-            # Extract JSON
-            json_match = response_text
-            if "```json" in response_text:
-                json_match = response_text.split("```json")[1].split("```")[0]
-            elif "```" in response_text:
-                json_match = response_text.split("```")[1].split("```")[0]
-
-            item = json.loads(json_match)
-
-            # Parse steps
-            steps = []
-            for step_data in item.get("steps", []):
-                steps.append(
-                    ScenarioStep(
-                        section=step_data.get("section", ""),
-                        instructions=step_data.get("instructions", []),
-                    )
-                )
-
-            # Sanitize current_benefits to ensure all values are booleans
-            raw_benefits = item.get("current_benefits", {})
-            current_benefits = {}
-            if isinstance(raw_benefits, dict):
-                for k, v in raw_benefits.items():
-                    if isinstance(v, bool):
-                        current_benefits[k] = v
-                    elif isinstance(v, str):
-                        current_benefits[k] = v.lower() in ("true", "yes", "1")
-                    else:
-                        current_benefits[k] = bool(v)
-
-            # Sanitize members_data to handle common issues
-            members_data = item.get("members_data", [])
-            if not isinstance(members_data, list):
-                members_data = []
-
-            test_case = HumanTestCase(
-                scenario_number=i,
-                title=item.get("title", f"Test Case {i}"),
-                what_checking=item.get("what_checking", ""),
-                category=item.get("category", category),
-                expected_eligible=bool(item.get("expected_eligible", False)),
-                expected_amount=item.get("expected_amount"),
-                expected_time=item.get("expected_time"),
-                steps=steps,
-                what_to_look_for=item.get("what_to_look_for", []) or [],
-                why_matters=item.get("why_matters", ""),
-                zip_code=str(item.get("zip_code", "00000")),
-                county=str(item.get("county", "Unknown")),
-                household_size=int(item.get("household_size", 1)),
-                household_assets=float(item.get("household_assets", 0) or 0),
-                members_data=members_data,
-                current_benefits=current_benefits,
-                citizenship_status=str(item.get("citizenship_status", "citizen")),
-            )
+            # Force the loop-assigned scenario number and category so they stay
+            # consistent regardless of what the model echoes back.
+            test_case.scenario_number = i
+            if not test_case.category:
+                test_case.category = category
             test_cases.append(test_case)
             messages.append(f"  [{i}/{len(categories)}] Generated: {test_case.title}")
 
@@ -274,7 +218,16 @@ def format_evaluable_criteria(mapping) -> str:
 
 async def fix_test_cases_node(state: ResearchState) -> dict:
     """
-    Fix issues identified by QA in test cases.
+    Fix test case issues identified by QA.
+
+    Sends the FULL current test suite (as JSON) plus the QA issues to the
+    researcher model, then parses the corrected scenarios back into a
+    ScenarioSuite so the next QA pass validates the improved version.
+
+    Token note: the suite is bounded (a handful of scenarios) and the output is
+    the same JSON shape the generation step already produces, so this stays
+    within model_max_tokens. On any parse failure the original suite is left
+    intact and the iteration counter bounds the loop.
     """
     messages = list(state.messages)
     messages.append("Fixing test case issues identified by QA...")
@@ -283,12 +236,68 @@ async def fix_test_cases_node(state: ResearchState) -> dict:
         messages.append("No issues to fix")
         return {"messages": messages}
 
-    # In a full implementation, would:
-    # 1. Parse the QA issues
-    # 2. Identify which test cases need changes
-    # 3. Ask LLM to fix specific issues
-    # 4. Return updated test_suite
+    if not state.test_suite or not state.test_suite.test_cases:
+        messages.append("No test suite available to fix")
+        return {"messages": messages}
 
-    messages.append(f"Addressed {len(state.test_case_qa_result.issues)} test case issues")
+    from .qa_research import format_qa_issues
 
-    return {"messages": messages}
+    current_output = state.test_suite.model_dump_json(indent=2)
+    issues_text = format_qa_issues(state.test_case_qa_result.issues)
+
+    # Structured output: the model returns a corrected ScenarioSuite directly.
+    llm = ChatAnthropic(
+        model=settings.researcher_model,
+        temperature=settings.model_temperature,
+        max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
+        api_key=settings.anthropic_api_key,
+    ).with_structured_output(ScenarioSuite)
+
+    today = date.today()
+    prompt = RESEARCHER_PROMPTS["fix_test_cases"].format(
+        program_name=state.program_name,
+        state_code=state.state_code,
+        current_output=current_output,
+        qa_issues=issues_text,
+        current_date=today.isoformat(),
+        current_year=today.year,
+    )
+
+    try:
+        revised = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+        if not revised.test_cases:
+            raise ValueError("No test cases in fix response")
+    except Exception as e:
+        # Leave the suite unchanged; qa_validate_tests will re-flag on the next
+        # pass and the iteration counter bounds the loop.
+        messages.append(f"Could not parse fix response ({e}); leaving test suite unchanged")
+        return {"messages": messages}
+
+    fixed_cases = revised.test_cases
+    # Preserve suite identity from state; only the scenarios were revised.
+    fixed_suite = ScenarioSuite(
+        program_name=state.test_suite.program_name,
+        white_label=state.test_suite.white_label,
+        test_cases=fixed_cases,
+        coverage_summary=f"Revised suite after QA fixes: {len(fixed_cases)} scenarios",
+    )
+
+    for issue in state.test_case_qa_result.issues:
+        issue.resolved = True
+
+    messages.append(
+        f"Applied fixes for {len(state.test_case_qa_result.issues)} issues; "
+        f"suite now has {len(fixed_cases)} scenarios"
+    )
+
+    return {
+        "test_suite": fixed_suite,
+        "test_case_qa_result": state.test_case_qa_result,
+        "messages": messages,
+    }

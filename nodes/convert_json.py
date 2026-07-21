@@ -21,6 +21,7 @@ from ..state import (
     JSONTestCaseHousehold,
     JSONTestCaseMember,
     JSONTestCaseMemberInsurance,
+    JSONTestCaseSuite,
     ResearchState,
     WorkflowStatus,
 )
@@ -209,6 +210,15 @@ def convert_test_case(
 async def fix_json_node(state: ResearchState) -> dict:
     """
     Fix JSON conversion issues identified by QA.
+
+    Sends the current JSON test cases plus the QA issues (and the human-readable
+    source scenarios for reference) to the researcher model, which returns the
+    corrected cases via structured output (already validated into JSONTestCase
+    objects). They are re-checked against test_case_schema.json for logging so
+    the next QA pass sees the improved version.
+
+    On any failure the original JSON is left intact and the iteration counter
+    bounds the loop.
     """
     messages = list(state.messages)
     messages.append("Fixing JSON conversion issues...")
@@ -217,8 +227,69 @@ async def fix_json_node(state: ResearchState) -> dict:
         messages.append("No JSON issues to fix")
         return {"messages": messages}
 
-    # In a full implementation, would parse issues and fix specific problems
+    if not state.json_test_cases:
+        messages.append("No JSON test cases available to fix")
+        return {"messages": messages}
 
-    messages.append(f"Addressed {len(state.json_qa_result.issues)} JSON issues")
+    from .qa_research import format_qa_issues
+    from .qa_tests import format_test_cases
 
-    return {"messages": messages}
+    current_json = json.dumps(
+        [tc.model_dump(exclude_none=True) for tc in state.json_test_cases], indent=2
+    )
+    human_source = format_test_cases(state.test_suite)
+    issues_text = format_qa_issues(state.json_qa_result.issues)
+
+    # Structured output: the model returns a validated JSONTestCaseSuite directly.
+    llm = ChatAnthropic(
+        model=settings.researcher_model,
+        temperature=settings.model_temperature,
+        max_tokens=settings.model_max_tokens,
+        max_retries=settings.model_max_retries,
+        api_key=settings.anthropic_api_key,
+    ).with_structured_output(JSONTestCaseSuite)
+
+    prompt = RESEARCHER_PROMPTS["fix_json"].format(
+        program_name=state.program_name,
+        white_label=state.white_label,
+        current_output=current_json,
+        human_test_cases=human_source,
+        qa_issues=issues_text,
+        current_date=date.today().isoformat(),
+    )
+
+    try:
+        revised = await llm.ainvoke(
+            [
+                SystemMessage(content=RESEARCHER_PROMPTS["system"]),
+                HumanMessage(content=prompt),
+            ]
+        )
+        if not revised.test_cases:
+            raise ValueError("No test cases in fix response")
+    except Exception as e:
+        # Leave the JSON unchanged; qa_validate_json will re-flag on the next pass
+        # and the iteration counter bounds the loop.
+        messages.append(f"Could not parse fix response ({e}); leaving JSON unchanged")
+        return {"messages": messages}
+
+    fixed_json_cases = revised.test_cases
+
+    # Re-validate the repaired cases against the schema for logging.
+    valid_count = sum(
+        1 for tc in fixed_json_cases if validate_test_case(tc.model_dump(exclude_none=True))[0]
+    )
+
+    for issue in state.json_qa_result.issues:
+        issue.resolved = True
+
+    messages.append(
+        f"Applied fixes for {len(state.json_qa_result.issues)} issues; "
+        f"schema validation: {valid_count}/{len(fixed_json_cases)} valid"
+    )
+
+    return {
+        "json_test_cases": fixed_json_cases,
+        "json_qa_result": state.json_qa_result,
+        "messages": messages,
+    }

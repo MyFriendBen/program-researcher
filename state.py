@@ -9,7 +9,7 @@ from datetime import date
 from enum import Enum
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 # -----------------------------------------------------------------------------
@@ -181,6 +181,21 @@ class EligibilityCriterion(BaseModel):
         description="Impact if this criterion cannot be evaluated",
     )
 
+    @field_validator("impact", mode="before")
+    @classmethod
+    def _coerce_impact(cls, value: object) -> "ImpactLevel":
+        """Accept case variants ('high', 'HIGH') and fall back to MEDIUM.
+
+        The enum values are title-case ("High") but LLM output is often lowercase,
+        so a strict match would reject valid answers or raise ValidationError.
+        """
+        if isinstance(value, ImpactLevel):
+            return value
+        if isinstance(value, str):
+            by_value = {level.value.lower(): level for level in ImpactLevel}
+            return by_value.get(value.strip().lower(), ImpactLevel.MEDIUM)
+        return ImpactLevel.MEDIUM
+
 
 class FieldMapping(BaseModel):
     """Complete mapping of program criteria to screener fields."""
@@ -240,6 +255,28 @@ class HumanTestCase(BaseModel):
         default_factory=dict, description="Current benefits checkboxes"
     )
     citizenship_status: str = Field(default="citizen", description="Citizenship/legal status")
+
+    @field_validator("current_benefits", mode="before")
+    @classmethod
+    def _coerce_current_benefits(cls, value: object) -> dict[str, bool]:
+        """Coerce checkbox values to real booleans ("yes"/"true"/1 -> True)."""
+        if not isinstance(value, dict):
+            return {}
+        coerced: dict[str, bool] = {}
+        for key, raw in value.items():
+            if isinstance(raw, bool):
+                coerced[key] = raw
+            elif isinstance(raw, str):
+                coerced[key] = raw.strip().lower() in ("true", "yes", "1")
+            else:
+                coerced[key] = bool(raw)
+        return coerced
+
+    @field_validator("members_data", mode="before")
+    @classmethod
+    def _coerce_members_data(cls, value: object) -> list:
+        """Guard against a non-list members_data payload from the model."""
+        return value if isinstance(value, list) else []
 
 
 class ScenarioSuite(BaseModel):
@@ -391,6 +428,12 @@ class JSONTestCase(BaseModel):
     notes: str
     household: JSONTestCaseHousehold
     expected_results: JSONTestCaseExpectedResults
+
+
+class JSONTestCaseSuite(BaseModel):
+    """Wrapper for a list of JSON test cases (structured-output target)."""
+
+    test_cases: list[JSONTestCase] = Field(default_factory=list)
 
 
 # -----------------------------------------------------------------------------
